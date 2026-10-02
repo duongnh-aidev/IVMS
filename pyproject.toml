@@ -1,0 +1,58 @@
+[project]
+name = "ivms"
+version = "0.1.0"
+description = "IVMS backend: REST API for devices, recording, playback and AI events"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "asyncpg>=0.31.0",
+    "cryptography>=50.0.2",
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.15.0",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "honcho>=2.0.0",
+    "poethepoet>=0.48.0",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/ivms"]
+
+[tool.ruff]
+line-length = 120
+# backend/ivms is first-party for import sorting
+src = ["backend", "."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+asyncio_mode = "auto"
+
+[tool.poe.tasks]
+setup = { script = "scripts.tasks:setup", help = "Install all dependencies, git hooks and create .env" }
+infra = { script = "scripts.tasks:infra_up", help = "Start supporting services (docker compose)" }
+infra-down = { cmd = "docker compose down", help = "Stop supporting services" }
+infra-logs = { cmd = "docker compose logs --follow", help = "Tail supporting services logs" }
+dev = { cmd = "honcho --procfile Procfile.dev start", help = "Run backend + frontend (pass a name to run only one, e.g. `poe dev backend`)" }
+db-migrate = { cmd = "npx prisma migrate dev", cwd = "db", envfile = ".env", help = "Create a migration from schema changes and apply it locally (pass --name <change>)" }
+db-deploy = { cmd = "npx prisma migrate deploy", cwd = "db", envfile = ".env", help = "Apply pending migrations (CI / staging / production)" }
+db-status = { cmd = "npx prisma migrate status", cwd = "db", envfile = ".env", help = "Show which migrations are applied" }
+db-reset = { cmd = "npx prisma migrate reset", cwd = "db", envfile = ".env", help = "Drop the local database and re-apply all migrations" }
+db-studio = { cmd = "npx prisma studio", cwd = "db", envfile = ".env", help = "Browse the database in Prisma Studio" }
+ai = { cmd = "docker compose --profile gpu up --build ai", help = "Build and run the DeepStream AI service (NVIDIA GPU only)" }
+test = { cmd = "pytest", help = "Run all tests" }
+test-unit = { cmd = "pytest tests/unit", help = "Run unit tests" }
+test-integration = { cmd = "pytest tests/integration", help = "Run integration tests (needs `poe infra`)" }
+lint = { cmd = "pre-commit run --all-files", help = "Run all pre-commit hooks" }

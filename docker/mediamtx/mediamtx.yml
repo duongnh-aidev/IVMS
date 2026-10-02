@@ -1,0 +1,50 @@
+# MediaMTX — stream relay between IP cameras and IVMS consumers.
+#
+#   camera --RTSP--> MediaMTX --RTSP-->  AI service (DeepStream)
+#                             --WebRTC/HLS--> browser (Live View)
+#
+# Each camera is one path (e.g. "cam-01"), pulled from the camera once and fanned
+# out to every reader. The backend adds/removes camera paths at runtime through the
+# Control API (POST /v3/config/paths/add/<name> {"source": "rtsp://user:pass@ip:554/..."}).
+#
+# Only settings that differ from MediaMTX defaults are listed here; see
+# https://github.com/bluenviron/mediamtx/blob/main/mediamtx.yml for the rest.
+# Any setting can also be overridden with an MTX_<KEY> env variable.
+
+logLevel: info
+
+# Control API (backend -> MediaMTX) and Prometheus metrics.
+api: yes
+apiAddress: :9997
+metrics: yes
+metricsAddress: :9998
+
+# DEV ONLY: anyone may publish/read, and the API/metrics are reachable from the host
+# (requests arrive from the Docker gateway, not 127.0.0.1). Lock this down before deploying.
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: api
+      - action: metrics
+
+# WebRTC from a browser to a container: advertise the host address and use a fixed UDP port.
+webrtcLocalUDPAddress: :8189
+webrtcAdditionalHosts: [127.0.0.1]
+
+paths:
+  # Synthetic test camera (720p25 H.264) for development without real cameras:
+  # rtsp://localhost:8554/demo, http://localhost:8889/demo (WebRTC), http://localhost:8888/demo (HLS)
+  demo:
+    runOnInit: >-
+      ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc2=size=1280x720:rate=25
+      -c:v libx264 -preset ultrafast -tune zerolatency -g 50 -pix_fmt yuv420p
+      -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+
+  # Camera paths are created through the API; this allows ad-hoc publishing to any other name.
+  all_others:
