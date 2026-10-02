@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch/PR to save runner minutes
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  UV_LOCKED: "1" # fail if uv.lock is out of sync with pyproject.toml
+
+jobs:
+  lint:
+    name: Lint (pre-commit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit hooks
+        run: uvx pre-commit run --all-files --show-diff-on-failure
+
+  backend-deps:
+    name: Backend dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .python-version
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Check dependency compatibility
+        run: uv pip check
+
+  unit-test:
+    name: Unit tests
+    needs: backend-deps
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .python-version
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      # Exit code 5 = no tests collected; tolerated until tests are written
+      - name: Run unit tests
+        run: uv run pytest tests/unit --cov=backend/ivms --cov-report=term-missing || [ $? -eq 5 ]
+
+  integration-test:
+    name: Integration tests
+    needs: unit-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .python-version
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: db/package-lock.json
+
+      - name: Install migration tool (Prisma)
+        run: npm ci --prefix db
+
+      # Default local-dev values (Postgres/Redis URLs) for compose, poe db-* and tests
+      - name: Create .env
+        run: cp .env.example .env
+
+      # Same supporting services as local dev (docker-compose.yml)
+      - name: Start supporting services
+        run: uv run poe infra
+
+      - name: Apply database migrations
+        run: uv run poe db-deploy
+
+      # Exit code 5 = no tests collected; tolerated until tests are written
+      - name: Run integration tests
+        run: uv run pytest tests/integration || [ $? -eq 5 ]
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Detect frontend project
+        id: detect
+        working-directory: .
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::frontend/package.json not found, skipping frontend build"
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.detect.outputs.exists == 'true'
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        if: steps.detect.outputs.exists == 'true'
+        run: npm ci
+
+      - name: Run tests
+        if: steps.detect.outputs.exists == 'true'
+        run: npm test --if-present
+
+      - name: Build
+        if: steps.detect.outputs.exists == 'true'
+        run: npm run build --if-present
+

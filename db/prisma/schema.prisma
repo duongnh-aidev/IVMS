@@ -1,0 +1,68 @@
+// Single source of truth for the IVMS PostgreSQL schema.
+//
+// Prisma is used only as the migration tool; the Python backend talks to the
+// database with its own driver. Workflow:
+//   1. Edit the models below.
+//   2. `uv run poe db-migrate --name <change>` creates db/prisma/migrations/<ts>_<change>/migration.sql
+//      and applies it to the local database. Commit the migration folder.
+//   3. Other environments apply pending migrations with `uv run poe db-deploy`.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// No `generator` block: no Prisma Client is generated (the backend is Python).
+
+// ---------------------------------------------------------------------------
+// Devices (backend/ivms/features/device_groups, backend/ivms/features/devices)
+// ---------------------------------------------------------------------------
+
+// Site / building / floor tree that devices are filed under.
+model DeviceGroup {
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String        @db.VarChar(100)
+  parentId  String?       @map("parent_id") @db.Uuid
+  parent    DeviceGroup?  @relation("DeviceGroupTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children  DeviceGroup[] @relation("DeviceGroupTree")
+  devices   Device[]
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime      @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([parentId, name])
+  @@map("device_groups")
+}
+
+enum DeviceStatus {
+  online
+  offline
+  error
+
+  @@map("device_status")
+}
+
+// A camera / NVR. Registered in MediaMTX as path "cam-<id>".
+model Device {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // Display code CAM-<seq>
+  seq         Int          @unique @default(autoincrement())
+  name        String       @db.VarChar(100)
+  host        String       @db.VarChar(253)
+  port        Int          @default(554)
+  path        String       @default("") @db.VarChar(255)
+  username    String       @default("") @db.VarChar(100)
+  // Fernet-encrypted with SECRET_KEY (backend/ivms/core/crypto.py); null = no password
+  passwordEnc String?      @map("password_enc")
+  groupId     String?      @map("group_id") @db.Uuid
+  group       DeviceGroup? @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  model       String?      @db.VarChar(100)
+  firmware    String?      @db.VarChar(100)
+  status      DeviceStatus @default(offline)
+  lastSeenAt  DateTime?    @map("last_seen_at") @db.Timestamptz(3)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([host, port, path])
+  @@index([groupId])
+  @@map("devices")
+}

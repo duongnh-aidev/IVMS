@@ -1,0 +1,36 @@
+html,
+body {
+  margin: 0;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+  background: #e8e9eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: #3e6ae1;
+  text-decoration: none;
+}
+
+a:hover {
+  color: #3457c0;
+}
+
+input::placeholder {
+  color: #8e8e8e;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,0 +1,2 @@
+backend: python -m ivms
+frontend: npm --prefix frontend run dev
