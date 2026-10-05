@@ -44,8 +44,8 @@ echo "==> Building $image:$version ($revision) for $platforms"
 docker buildx build \
   --platform "$platforms" \
   --tag "$image:$version" \
-  --tag "$image:latest" \
-  --label "org.opencontainers.image.source=https://github.com/duongnh-aidev/IVMS" \
+  $([[ "$version" == *-* ]] || echo --tag "$image:latest") \
+  --label "org.opencontainers.image.source=${IVMS_SOURCE_URL:-https://github.com/duongnh-aidev/IVMS}" \
   --label "org.opencontainers.image.version=$version" \
   --label "org.opencontainers.image.revision=$revision" \
   --label "org.opencontainers.image.title=IVMS" \

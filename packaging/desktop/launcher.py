@@ -1,12 +1,15 @@
-"""IVMS.app entry point: starts MediaMTX and the API, then shows the web UI in a native window.
+"""IVMS desktop entry point (macOS IVMS.app, Windows IVMS.exe): starts MediaMTX and the API, then shows
+the web UI in a native window.
 
-PostgreSQL is not bundled: the user installs Postgres.app (https://postgresapp.com). On start the
-launcher checks it, creates the `ivms` database if needed and applies migrations. Closing the window
-stops everything.
+PostgreSQL is not bundled: the user installs it (macOS: Postgres.app, Windows: the PostgreSQL installer).
+On start the launcher checks it, creates the `ivms` database if needed and applies migrations. Closing
+the window stops everything.
 
 Files:
-  ~/Library/Application Support/IVMS/ivms.env   settings and generated secrets (edit DATABASE_URL here)
-  ~/Library/Logs/IVMS/                          ivms.log (API), mediamtx.log
+  macOS    ~/Library/Application Support/IVMS/ivms.env   settings and generated secrets (edit DATABASE_URL here)
+           ~/Library/Logs/IVMS/                          ivms.log (API), mediamtx.log
+  Windows  %APPDATA%\\IVMS\\ivms.env
+           %LOCALAPPDATA%\\IVMS\\Logs\\
 """
 
 import asyncio
@@ -24,10 +27,22 @@ import webbrowser
 from pathlib import Path
 
 APP_NAME = "IVMS"
-SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
-LOG_DIR = Path.home() / "Library" / "Logs" / APP_NAME
+WINDOWS = sys.platform == "win32"
+if WINDOWS:
+    SUPPORT_DIR = Path(os.environ["APPDATA"]) / APP_NAME
+    LOG_DIR = Path(os.environ["LOCALAPPDATA"]) / APP_NAME / "Logs"
+    POSTGRES_NAME = "PostgreSQL"
+    POSTGRES_DOWNLOAD = "https://www.postgresql.org/download/windows/"
+    # The installer creates the "postgres" superuser with the password chosen during setup
+    DEFAULT_DB_USER = "postgres"
+else:
+    SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
+    LOG_DIR = Path.home() / "Library" / "Logs" / APP_NAME
+    POSTGRES_NAME = "Postgres.app"
+    POSTGRES_DOWNLOAD = "https://postgresapp.com/downloads.html"
+    # Postgres.app: the macOS user, no password
+    DEFAULT_DB_USER = os.environ.get("USER", "postgres")
 CONFIG = SUPPORT_DIR / "ivms.env"
-POSTGRES_DOWNLOAD = "https://postgresapp.com/downloads.html"
 # Fixed so the web UI keeps its origin (and its saved sign-in) between runs
 DEFAULT_API_PORT = 8765
 # MediaMTX listen addresses; any MTX_<SETTING> in ivms.env overrides its mediamtx.yml value
@@ -38,16 +53,19 @@ MEDIAMTX_DEFAULTS = {
     "MTX_WEBRTCADDRESS": ":8889",
 }
 
-# Bundled files: next to this script in the .app (PyInstaller), the repository in development
+MEDIAMTX_EXE = "mediamtx.exe" if WINDOWS else "mediamtx"
+
+# Bundled files: inside the app (PyInstaller), the repository in development
 if getattr(sys, "frozen", False):
     RESOURCES = Path(sys._MEIPASS)
     WEB_DIR, MIGRATIONS_DIR = RESOURCES / "web", RESOURCES / "migrations"
-    MEDIAMTX_BIN, MEDIAMTX_CONF = RESOURCES / "bin" / "mediamtx", RESOURCES / "mediamtx.yml"
+    MEDIAMTX_BIN, MEDIAMTX_CONF = RESOURCES / "bin" / MEDIAMTX_EXE, RESOURCES / "mediamtx.yml"
 else:
     ROOT = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(ROOT / "backend"))
     WEB_DIR, MIGRATIONS_DIR = ROOT / "frontend" / "dist", ROOT / "db" / "prisma" / "migrations"
-    MEDIAMTX_BIN, MEDIAMTX_CONF = ROOT / "build" / "macos" / "mediamtx", ROOT / "deploy" / "docker" / "mediamtx.yml"
+    MEDIAMTX_BIN = ROOT / "build" / ("windows" if WINDOWS else "macos") / MEDIAMTX_EXE
+    MEDIAMTX_CONF = ROOT / "deploy" / "docker" / "mediamtx.yml"
 
 log = logging.getLogger("ivms.launcher")
 
@@ -67,11 +85,16 @@ def load_config() -> None:
     """Reads ivms.env into the environment, creating it with fresh secrets on first run."""
     SUPPORT_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG.exists():
-        user = os.environ.get("USER", "postgres")
+        db_hint = (
+            "# PostgreSQL installer: user postgres, the password you chose during setup, port 5432.\n"
+            "# Put that password after the colon: postgresql://postgres:<password>@localhost:5432/ivms\n"
+            if WINDOWS
+            else "# Postgres.app default: your macOS user, no password, port 5432.\n"
+        )
         CONFIG.write_text(
             "# IVMS settings. Restart IVMS after editing.\n"
-            "# Postgres.app default: your macOS user, no password, port 5432.\n"
-            f"DATABASE_URL=postgresql://{user}@localhost:5432/ivms\n"
+            f"{db_hint}"
+            f"DATABASE_URL=postgresql://{DEFAULT_DB_USER}@localhost:5432/ivms\n"
             f"API_PORT={DEFAULT_API_PORT}\n"
             "ACCESS_TOKEN_TTL_SECONDS=1800\n"
             "# Generated on first run. Keep them: SECRET_KEY encrypts stored camera passwords.\n"
@@ -148,9 +171,15 @@ async def prepare_database(dsn: str) -> None:
             await admin.close()
         log.info("Created database %s", name)
     except (TimeoutError, OSError) as e:
+        start = "make sure its service is running" if WINDOWS else "open it and press “Start”"
         raise StartupError(
-            "PostgreSQL is not running. Install Postgres.app, open it and press “Start”, then try again.",
-            ("Download Postgres.app", POSTGRES_DOWNLOAD),
+            f"PostgreSQL is not running. Install {POSTGRES_NAME}, {start}, then try again.",
+            (f"Download {POSTGRES_NAME}", POSTGRES_DOWNLOAD),
+        ) from e
+    except (asyncpg.InvalidPasswordError, asyncpg.InvalidAuthorizationSpecificationError) as e:
+        raise StartupError(
+            f"PostgreSQL rejected the login ({e}). Set the user and password in DATABASE_URL, save, then try again.",
+            ("Open settings", CONFIG.as_uri()),
         ) from e
     except asyncpg.PostgresError as e:
         raise StartupError(f"Cannot use the database: {e}. Check DATABASE_URL in {CONFIG}.") from e
@@ -188,7 +217,12 @@ class Services:
                 )
         out = (LOG_DIR / "mediamtx.log").open("ab")
         self.mediamtx = subprocess.Popen(
-            [str(MEDIAMTX_BIN), str(MEDIAMTX_CONF)], env=os.environ, stdout=out, stderr=subprocess.STDOUT
+            [str(MEDIAMTX_BIN), str(MEDIAMTX_CONF)],
+            env=os.environ,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            # The app has no console; without this Windows opens one for MediaMTX
+            creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS else 0,
         )
         if not wait_http(os.environ["MEDIAMTX_API_URL"] + "/v3/paths/list", 15, self.mediamtx):
             raise StartupError(f"The video relay (MediaMTX) did not start. See {LOG_DIR / 'mediamtx.log'}.")
@@ -224,7 +258,7 @@ class Services:
 
 PAGE = """<!doctype html><meta charset="utf-8"><style>
 body{{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
-font:14px -apple-system,sans-serif;color:#171A20;background:#F4F4F4}}
+font:14px -apple-system,"Segoe UI",sans-serif;color:#171A20;background:#F4F4F4}}
 .box{{max-width:440px;text-align:center;display:flex;flex-direction:column;gap:14px;padding:24px}}
 h1{{font-size:20px;margin:0}} p{{margin:0;line-height:20px;color:#5C5E62}}
 button{{height:34px;padding:0 16px;border:0;border-radius:6px;font:inherit;font-weight:500;cursor:pointer}}
@@ -257,7 +291,12 @@ class Bridge:
         self._app = app
 
     def open_url(self, url: str) -> None:
-        webbrowser.open(url)
+        if url.startswith("file:") and WINDOWS:
+            os.startfile(CONFIG)  # Notepad (or the .env editor) rather than the browser
+        elif url.startswith("file:"):
+            subprocess.Popen(["open", "-t", str(CONFIG)])  # default text editor
+        else:
+            webbrowser.open(url)
 
     def retry(self) -> None:
         threading.Thread(target=self._app.boot, daemon=True).start()

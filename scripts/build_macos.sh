@@ -58,8 +58,8 @@ done
 iconutil -c icns "$iconset" -o "$build/IVMS.icns"
 
 echo "==> App bundle"
-uv sync --group macos
-uv run --group macos pyinstaller packaging/macos/IVMS.spec \
+uv sync --group desktop
+uv run --group desktop pyinstaller packaging/macos/IVMS.spec \
   --noconfirm --clean --distpath "$out" --workpath "$build/pyinstaller"
 app="$out/IVMS.app"
 
