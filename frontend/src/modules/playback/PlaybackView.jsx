@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { useElementWidth } from '../../core/useElementWidth';
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 import ExportModal from './ExportModal';
 import { Fragment } from 'react';
 
-export default function PlaybackView({ presenter }) {
+export default function PlaybackView({ controller }) {
   const {
     exportForm,
     addBookmark,
@@ -57,10 +57,10 @@ export default function PlaybackView({ presenter }) {
     pvState,
     setPbSpeed,
     toggleCal,
-  } = usePresenter(presenter);
+  } = useController(controller);
 
   // Timeline pointer -> fraction of the visible window; dragging keeps seeking until mouseup anywhere.
-  const tlRef = useElementWidth(presenter.setTimelineWidth);
+  const tlRef = useElementWidth(controller.setTimelineWidth);
   const dragging = useRef(false);
   const fractionAt = (clientX) => {
     const r = tlRef.current.getBoundingClientRect();
@@ -68,12 +68,12 @@ export default function PlaybackView({ presenter }) {
   };
   const tlDown = (e) => {
     dragging.current = true;
-    presenter.seekToFraction(fractionAt(e.clientX));
+    controller.seekToFraction(fractionAt(e.clientX));
   };
-  const tlMove = (e) => presenter.hoverAt(fractionAt(e.clientX));
-  const tlLeave = () => presenter.hoverAt(null);
+  const tlMove = (e) => controller.hoverAt(fractionAt(e.clientX));
+  const tlLeave = () => controller.hoverAt(null);
   useEffect(() => {
-    const move = (e) => dragging.current && tlRef.current && presenter.seekToFraction(fractionAt(e.clientX));
+    const move = (e) => dragging.current && tlRef.current && controller.seekToFraction(fractionAt(e.clientX));
     const up = () => (dragging.current = false);
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
@@ -81,7 +81,7 @@ export default function PlaybackView({ presenter }) {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
     };
-  }, [presenter]);
+  }, [controller]);
   return (
     <>
       <header

@@ -1,7 +1,7 @@
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 import AddStorageModal from './AddStorageModal';
 
-export default function StorageView({ presenter }) {
+export default function StorageView({ controller }) {
   const {
     addForm,
     disks2,
@@ -14,7 +14,7 @@ export default function StorageView({ presenter }) {
     stSegs,
     stTotal,
     stUsed,
-  } = usePresenter(presenter);
+  } = useController(controller);
   return (
     <>
       <header

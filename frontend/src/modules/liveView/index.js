@@ -1,13 +1,13 @@
 import { createElement } from 'react';
-import { LiveViewInteractor } from './LiveViewInteractor';
-import { LiveViewPresenter } from './LiveViewPresenter';
-import { LiveViewRouter } from './LiveViewRouter';
+import { LiveViewModel } from './LiveViewModel';
+import { LiveViewController } from './LiveViewController';
 import LiveViewView from './LiveViewView';
 
 export function buildLiveView({ devices, shell, deviceEditor }) {
-  const presenter = new LiveViewPresenter({
-    interactor: new LiveViewInteractor({ devices }),
-    router: new LiveViewRouter({ shell, deviceEditor }),
+  const controller = new LiveViewController({
+    model: new LiveViewModel({ devices }),
+    shell,
+    deviceEditor,
   });
-  return { presenter, input: { pin: presenter.pin }, View: () => createElement(LiveViewView, { presenter }) };
+  return { controller, input: { pin: controller.pin }, View: () => createElement(LiveViewView, { controller }) };
 }

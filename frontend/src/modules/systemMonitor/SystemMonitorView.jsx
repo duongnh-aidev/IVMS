@@ -1,6 +1,6 @@
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 
-export default function SystemMonitorView({ presenter }) {
+export default function SystemMonitorView({ controller }) {
   const {
     cpuBig,
     cpuColor,
@@ -20,7 +20,7 @@ export default function SystemMonitorView({ presenter }) {
     upBig,
     upNow,
     upSub,
-  } = usePresenter(presenter);
+  } = useController(controller);
   return (
     <div
       style={{

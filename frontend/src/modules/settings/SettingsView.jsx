@@ -1,7 +1,7 @@
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 
-export default function SettingsView({ presenter }) {
-  const { setRows, setSecs } = usePresenter(presenter);
+export default function SettingsView({ controller }) {
+  const { setRows, setSecs } = useController(controller);
   return (
     <>
       <header

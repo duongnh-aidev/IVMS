@@ -1,11 +1,11 @@
 import { useElementWidth } from '../../core/useElementWidth';
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 import ConfirmDeleteDialog from './ConfirmDeleteDialog';
 
-export default function DevicesView({ presenter }) {
+export default function DevicesView({ controller }) {
   const { closeMenu, confirm, devCols, devRows, devTabs, devWide, grpList, menuAny, noRows, openAdd, q, setQ } =
-    usePresenter(presenter);
-  const devRef = useElementWidth(presenter.setTableWidth);
+    useController(controller);
+  const devRef = useElementWidth(controller.setTableWidth);
   return (
     <>
       <header style={{ flex: 'none', display: 'flex', flexDirection: 'column', gap: 14, padding: '12px 24px 0' }}>

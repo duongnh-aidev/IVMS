@@ -1,7 +1,7 @@
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 
-export default function HelpView({ presenter }) {
-  const { guides, helpContact, helpLogs, hq, noGuides, setHq, shortcuts } = usePresenter(presenter);
+export default function HelpView({ controller }) {
+  const { guides, helpContact, helpLogs, hq, noGuides, setHq, shortcuts } = useController(controller);
   return (
     <>
       <header

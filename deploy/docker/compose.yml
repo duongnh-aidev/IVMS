@@ -1,0 +1,56 @@
+# IVMS on any machine with Docker (macOS, Windows, Linux; amd64 or arm64).
+# Install: ./install.sh (or install.ps1 on Windows), which creates .env and starts everything.
+# Then open http://localhost:${IVMS_PORT} and create the admin account.
+
+# Not "ivms": that is the development stack's project (docker-compose.yml at the repo root)
+name: ivms-server
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ivms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run install.sh to create .env}
+      POSTGRES_DB: ivms
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ivms -d ivms"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No published port: only the app talks to it
+
+  mediamtx:
+    image: bluenviron/mediamtx:${MEDIAMTX_VERSION:-1.21.1}
+    restart: unless-stopped
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "${MEDIAMTX_RTSP_PORT:-8554}:8554" # RTSP (AI service, VLC)
+      - "${MEDIAMTX_HLS_PORT:-8888}:8888" # HLS (browser fallback)
+      - "${MEDIAMTX_WEBRTC_PORT:-8889}:8889" # WebRTC (browser Live View)
+      - "${MEDIAMTX_WEBRTC_UDP_PORT:-8189}:8189/udp" # WebRTC media (keep 8189 unless it is taken)
+      # Control API (9997) is not published: only the app may register cameras
+
+  app:
+    image: ${IVMS_IMAGE:?set IVMS_IMAGE in .env}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://ivms:${POSTGRES_PASSWORD}@postgres:5432/ivms
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      MEDIAMTX_RTSP_URL: rtsp://mediamtx:8554
+      SECRET_KEY: ${SECRET_KEY:?run install.sh to create .env}
+      JWT_SECRET: ${JWT_SECRET:?run install.sh to create .env}
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-1800}
+    ports:
+      - "${IVMS_PORT:-8080}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mediamtx:
+        condition: service_started
+
+volumes:
+  postgres-data:

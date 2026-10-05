@@ -3,13 +3,17 @@ name = "ivms"
 version = "0.1.0"
 description = "IVMS backend: REST API for devices, recording, playback and AI events"
 readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
+    "argon2-cffi>=23.1",
     "asyncpg>=0.31.0",
     "cryptography>=50.0.2",
     "fastapi>=0.142.2",
     "httpx>=0.28.1",
     "pydantic-settings>=2.15.0",
+    "pyjwt>=2.10",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -21,6 +25,10 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
+]
+macos = [
+    "pyinstaller>=6.11 ; sys_platform == 'darwin'",
+    "pywebview>=5.3 ; sys_platform == 'darwin'",
 ]
 
 [build-system]
@@ -51,7 +59,7 @@ db-deploy = { cmd = "npx prisma migrate deploy", cwd = "db", envfile = ".env", h
 db-status = { cmd = "npx prisma migrate status", cwd = "db", envfile = ".env", help = "Show which migrations are applied" }
 db-reset = { cmd = "npx prisma migrate reset", cwd = "db", envfile = ".env", help = "Drop the local database and re-apply all migrations" }
 db-studio = { cmd = "npx prisma studio", cwd = "db", envfile = ".env", help = "Browse the database in Prisma Studio" }
-ai = { cmd = "docker compose --profile gpu up --build ai", help = "Build and run the DeepStream AI service (NVIDIA GPU only)" }
+create-user = { cmd = "python -m ivms.features.auth.cli", help = "Create a user who can sign in (pass <username> [--name NAME])" }
 test = { cmd = "pytest", help = "Run all tests" }
 test-unit = { cmd = "pytest tests/unit", help = "Run unit tests" }
 test-integration = { cmd = "pytest tests/integration", help = "Run integration tests (needs `poe infra`)" }

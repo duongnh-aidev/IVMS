@@ -1,4 +1,4 @@
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 import SidebarView from './SidebarView';
 import ToastView from './ToastView';
 
@@ -16,8 +16,8 @@ const trafficLight = (bg) => ({
  * @param statusBar bound system-monitor view
  * @param overlays  bound views rendered above every screen (e.g. the device editor)
  */
-export default function ShellView({ presenter, screens, statusBar: StatusBar, overlays = [] }) {
-  const { active, sidebar, toast } = usePresenter(presenter);
+export default function ShellView({ controller, screens, statusBar: StatusBar, overlays = [] }) {
+  const { active, sidebar, toast } = useController(controller);
   const Screen = screens[active];
   return (
     <div

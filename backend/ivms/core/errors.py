@@ -1,6 +1,6 @@
 """Domain errors and their mapping to RFC 9457 `application/problem+json` responses.
 
-Services and repositories raise `AppError` subclasses; they never build HTTP responses themselves.
+Controllers and models raise `AppError` subclasses; they never build HTTP responses themselves.
 """
 
 from fastapi import FastAPI, Request
@@ -25,6 +25,13 @@ class NotFound(AppError):
     title = "Not found"
 
 
+class Unauthorized(AppError):
+    """Missing, invalid or expired credentials: the client must sign in (again)."""
+
+    status = 401
+    title = "Unauthorized"
+
+
 class Conflict(AppError):
     status = 409
     title = "Conflict"
@@ -44,17 +51,19 @@ class UpstreamError(AppError):
     title = "Upstream service error"
 
 
-def _problem(status: int, title: str, detail: str | None = None, **extra) -> JSONResponse:
+def _problem(status: int, title: str, detail: str | None = None, headers: dict | None = None, **extra) -> JSONResponse:
     body = {"type": "about:blank", "title": title, "status": status}
     if detail:
         body["detail"] = detail
-    return JSONResponse(body | extra, status_code=status, media_type=PROBLEM_JSON)
+    return JSONResponse(body | extra, status_code=status, media_type=PROBLEM_JSON, headers=headers)
 
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError):
-        return _problem(exc.status, exc.title, exc.detail)
+        # RFC 6750: tell the client which scheme to authenticate with
+        headers = {"WWW-Authenticate": "Bearer"} if exc.status == 401 else None
+        return _problem(exc.status, exc.title, exc.detail, headers)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_: Request, exc: RequestValidationError):
@@ -67,4 +76,4 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(HTTPException)
     async def _http_error(_: Request, exc: HTTPException):
-        return _problem(exc.status_code, str(exc.detail))
+        return _problem(exc.status_code, str(exc.detail), headers=getattr(exc, "headers", None))

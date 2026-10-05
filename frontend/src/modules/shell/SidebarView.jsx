@@ -1,3 +1,4 @@
+import logoUrl from '../../assets/logo.png';
 import { prevented } from '../../core/events';
 
 export default function SidebarView({
@@ -37,8 +38,11 @@ export default function SidebarView({
           <div
             style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 10 }}
           >
-            <div style={{ fontSize: 26, lineHeight: 1, fontWeight: 700, letterSpacing: '-0.02em', color: '#3E6AE1' }}>
-              IVMS
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <img src={logoUrl} alt="" width={30} height={30} style={{ display: 'block' }} />
+              <div style={{ fontSize: 26, lineHeight: 1, fontWeight: 700, letterSpacing: '-0.02em', color: '#3E6AE1' }}>
+                IVMS
+              </div>
             </div>
             <button
               onClick={toggleSide}
@@ -96,9 +100,7 @@ export default function SidebarView({
               transition: 'background-color .33s',
             }}
           >
-            {showMiniLogo && (
-              <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.02em', color: '#3E6AE1' }}>IVMS</span>
-            )}
+            {showMiniLogo && <img src={logoUrl} alt="IVMS" width={28} height={28} style={{ display: 'block' }} />}
             {logoHover && (
               <svg
                 width="16"

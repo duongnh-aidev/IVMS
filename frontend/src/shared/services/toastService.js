@@ -1,4 +1,4 @@
-import { Observable } from '../../core/viper';
+import { Observable } from '../../core/mvc';
 
 /** App-wide transient message ("Device added", "Deleted Lobby"). */
 export class ToastService extends Observable {

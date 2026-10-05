@@ -1,4 +1,4 @@
-import { Observable } from '../../core/viper';
+import { Observable } from '../../core/mvc';
 
 /**
  * Notification entities: [id, day, time, title, description, target screen, color, kind].

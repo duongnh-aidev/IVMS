@@ -1,14 +1,15 @@
 import { createElement } from 'react';
-import { DevicesInteractor } from './DevicesInteractor';
-import { DevicesPresenter } from './DevicesPresenter';
-import { DevicesRouter } from './DevicesRouter';
+import { DevicesModel } from './DevicesModel';
+import { DevicesController } from './DevicesController';
 import DevicesView from './DevicesView';
 
 export function buildDevices({ devices, toast, shell, liveView, deviceEditor }) {
-  const presenter = new DevicesPresenter({
-    interactor: new DevicesInteractor({ devices }),
-    router: new DevicesRouter({ shell, liveView, deviceEditor }),
+  const controller = new DevicesController({
+    model: new DevicesModel({ devices }),
     toast,
+    shell,
+    liveView,
+    deviceEditor,
   });
-  return { presenter, View: () => createElement(DevicesView, { presenter }) };
+  return { controller, View: () => createElement(DevicesView, { controller }) };
 }

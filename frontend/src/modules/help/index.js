@@ -1,10 +1,9 @@
 import { createElement } from 'react';
-import { HelpInteractor } from './HelpInteractor';
-import { HelpPresenter } from './HelpPresenter';
-import { HelpRouter } from './HelpRouter';
+import { HelpModel } from './HelpModel';
+import { HelpController } from './HelpController';
 import HelpView from './HelpView';
 
 export function buildHelp({ toast }) {
-  const presenter = new HelpPresenter({ interactor: new HelpInteractor(), router: new HelpRouter(), toast });
-  return { presenter, View: () => createElement(HelpView, { presenter }) };
+  const controller = new HelpController({ model: new HelpModel(), toast });
+  return { controller, View: () => createElement(HelpView, { controller }) };
 }

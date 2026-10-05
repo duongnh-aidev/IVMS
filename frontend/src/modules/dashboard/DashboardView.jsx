@@ -1,7 +1,7 @@
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 
-export default function DashboardView({ presenter }) {
-  const { disks, events, eventsTotal, goDevices, health, hours, kpis } = usePresenter(presenter);
+export default function DashboardView({ controller }) {
+  const { disks, events, eventsTotal, goDevices, health, hours, kpis } = useController(controller);
   return (
     <>
       <header

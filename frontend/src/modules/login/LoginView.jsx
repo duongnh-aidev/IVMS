@@ -1,4 +1,5 @@
-import { usePresenter } from '../../core/viper';
+import logoUrl from '../../assets/logo.png';
+import { useController } from '../../core/mvc';
 
 const label = { fontSize: 13, fontWeight: 600, color: '#171A20' };
 const input = {
@@ -23,7 +24,7 @@ const dot = (bg) => ({
 });
 
 /** Sign-in window. */
-export default function LoginView({ presenter }) {
+export default function LoginView({ controller }) {
   const {
     showServer,
     server,
@@ -47,9 +48,12 @@ export default function LoginView({ presenter }) {
     loading,
     submit,
     submitLabel,
+    title,
+    subtitle,
+    passPlaceholder,
     editionLabel,
     editionColor,
-  } = usePresenter(presenter);
+  } = useController(controller);
 
   return (
     <div
@@ -82,10 +86,11 @@ export default function LoginView({ presenter }) {
 
         <div style={{ padding: '16px 36px 28px', display: 'flex', flexDirection: 'column', gap: 28 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <img src={logoUrl} alt="" width={64} height={64} style={{ display: 'block', marginBottom: 8 }} />
             <div style={{ fontSize: 20, lineHeight: '26px', fontWeight: 600 }}>
-              Sign in to <span style={{ color: '#3E6AE1' }}>IVMS</span>
+              {title} <span style={{ color: '#3E6AE1' }}>IVMS</span>
             </div>
-            <div style={{ fontSize: 13, lineHeight: '18px', color: '#5C5E62' }}>Video Management System</div>
+            <div style={{ fontSize: 13, lineHeight: '18px', color: '#5C5E62' }}>{subtitle}</div>
           </div>
 
           <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -127,7 +132,7 @@ export default function LoginView({ presenter }) {
                   value={pass}
                   onChange={setPass}
                   type={passType}
-                  placeholder="Password"
+                  placeholder={passPlaceholder}
                   autoComplete="current-password"
                   style={{
                     ...input,

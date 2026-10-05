@@ -1,51 +1,44 @@
-// Device entity: a camera/NVR known to IVMS. Built-in demo cameras have ids 0..15,
-// devices added by the user have ids from 100.
-
-export const CUSTOM_ID_BASE = 100;
-
-/** Demo camera names; camera i is CAM-(i+1). */
-export const DEMO_CAMERAS = [
-  'Front Gate',
-  'Lobby',
-  'Parking B1',
-  'Warehouse',
-  'Corridor 2F',
-  'Server Room',
-  'Reception',
-  'Loading Dock',
-  'Rooftop',
-  'Parking B2',
-  'Stairwell A',
-  'Cafeteria',
-  'Meeting Room 3',
-  'Back Door',
-  'Elevator Hall',
-  'Corridor 3F',
-];
-
-/** Device groups: [id, label, depth]. A group contains its "<id>-..." children. */
-export const DEVICE_GROUPS = [
-  ['all', 'All devices', 0],
-  ['hq', 'Head Office', 0],
-  ['hq-a', 'Building A', 1],
-  ['hq-a-1', 'Floor 1', 2],
-  ['hq-a-2', 'Floor 2', 2],
-  ['hq-b', 'Building B', 1],
-  ['wh', 'Warehouse', 0],
-];
+// Device entity: a camera/NVR registered on the IVMS server (GET /devices), and the
+// device-group tree it is filed under (GET /device-groups).
 
 export const DEVICE_STATUSES = ['Online', 'Offline', 'Error'];
 
-/** Display code: CAM-01 for built-in cameras, NEW-01 for user-added ones. */
-export function deviceCode(id) {
-  return id >= CUSTOM_ID_BASE
-    ? 'NEW-' + String(id - CUSTOM_ID_BASE + 1).padStart(2, '0')
-    : 'CAM-' + String(id + 1).padStart(2, '0');
+const STATUS_LABEL = { online: 'Online', offline: 'Offline', error: 'Error' };
+
+/**
+ * Display record of an API device.
+ * @param d       API device (camelCase, see docs/backend-api.md §4.5)
+ * @param groups  Map of group id -> API group
+ */
+export function toDevice(d, groups) {
+  return {
+    i: d.id,
+    id: d.code,
+    name: d.name,
+    status: STATUS_LABEL[d.status] || 'Offline',
+    ip: d.host + ':' + d.port,
+    fw: d.firmware || '—',
+    model: d.model || '—',
+    account: d.username || '—',
+    grp: d.groupId,
+    grpName: groupLabel(d.groupId, groups),
+  };
 }
 
-/** True if device group `grp` is inside group `filter` ('all' matches everything). */
-export function inGroup(grp, filter) {
-  return filter === 'all' || grp === filter || grp.startsWith(filter + '-');
+/** "Building A · Floor 1": the group and its parent (top-level groups show their own name). */
+export function groupLabel(groupId, groups) {
+  const g = groups.get(groupId);
+  if (!g) return '—';
+  const parent = groups.get(g.parentId);
+  return parent && g.depth >= 2 ? parent.name + ' · ' + g.name : g.name;
+}
+
+/** Ids of a group and all its descendants. */
+export function subtreeIds(groupId, groupList) {
+  const ids = new Set([groupId]);
+  // The API lists groups depth-first, so a parent always comes before its children
+  for (const g of groupList) if (ids.has(g.parentId)) ids.add(g.id);
+  return ids;
 }
 
 export const isValidIPv4 = (ip) => /^\d{1,3}(\.\d{1,3}){3}$/.test((ip || '').trim());

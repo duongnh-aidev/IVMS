@@ -1,9 +1,9 @@
 import { createElement } from 'react';
-import { PlaybackInteractor } from './PlaybackInteractor';
-import { PlaybackPresenter } from './PlaybackPresenter';
+import { PlaybackModel } from './PlaybackModel';
+import { PlaybackController } from './PlaybackController';
 import PlaybackView from './PlaybackView';
 
 export function buildPlayback({ devices, archive, toast }) {
-  const presenter = new PlaybackPresenter({ interactor: new PlaybackInteractor({ devices, archive }), toast });
-  return { presenter, View: () => createElement(PlaybackView, { presenter }) };
+  const controller = new PlaybackController({ model: new PlaybackModel({ devices, archive }), toast });
+  return { controller, View: () => createElement(PlaybackView, { controller }) };
 }

@@ -1,16 +1,24 @@
-import { Observable } from '../core/viper';
+import { Observable } from '../core/mvc';
 
 const ROUTES = { login: '#/login', app: '#/app' };
 
-/** Top-level routes in the URL hash: #/login (default) and #/app. */
+/**
+ * Top-level routes in the URL hash: #/login and #/app. The app is only shown with a valid
+ * session; when the session ends (sign out, token expired) it goes back to #/login.
+ */
 export class AppNavigator extends Observable {
-  constructor() {
+  constructor({ auth }) {
     super();
+    this.auth = auth;
     window.addEventListener('hashchange', () => this.emit());
+    auth.subscribe(() => {
+      if (!auth.isSignedIn()) this.toLogin();
+      this.emit();
+    });
   }
 
   route() {
-    return window.location.hash === ROUTES.app ? 'app' : 'login';
+    return this.auth.isSignedIn() && window.location.hash !== ROUTES.login ? 'app' : 'login';
   }
 
   toApp() {
