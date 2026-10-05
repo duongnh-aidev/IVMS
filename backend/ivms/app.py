@@ -28,7 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await app.state.mediamtx_http.aclose()
             await app.state.pool.close()
 
-    app = FastAPI(title="IVMS API", version="0.1.0", lifespan=lifespan, docs_url=f"{API_PREFIX}/docs",
+    app = FastAPI(title="IVMS API", version=system.controller.VERSION, lifespan=lifespan, docs_url=f"{API_PREFIX}/docs",
                   openapi_url=f"{API_PREFIX}/openapi.json")
     app.add_middleware(
         CORSMiddleware,

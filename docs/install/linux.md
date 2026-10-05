@@ -26,7 +26,7 @@ Other ways to install: [docs.docker.com/engine/install](https://docs.docker.com/
 ## 2. Download and install IVMS
 
 Replace `<version>` with the latest version from the [Releases page](https://github.com/duongnh-aidev/IVMS/releases/latest)
-(for example `0.1.0`):
+(for example `1.0.0`):
 
 ```bash
 VERSION=<version>
