@@ -2,6 +2,10 @@
 Turning ordinary IP cameras into smart cameras: an IVMS that runs AI analytics on any RTSP stream, no hardware upgrade required.
 
 
+## Install
+
+Download IVMS from the [Releases page](https://github.com/duongnh-aidev/IVMS/releases/latest) and follow the guide for your system: [Linux](docs/install/linux.md), [macOS](docs/install/macos.md) or [Windows](docs/install/windows.md). Overview: [docs/install](docs/install/README.md).
+
 ## Development
 
 Requirements: [uv](https://docs.astral.sh/uv/), Node.js (LTS), Docker.

@@ -38,7 +38,7 @@ Run `uv run poe` to list every task. See the [README](README.md) for details on 
 | `frontend/`        | React + Vite client, one module per feature under `src/modules/`     | [frontend/README.md](frontend/README.md) |
 | `db/prisma/`       | Database schema and migrations (Prisma is used for migrations only)  | [README](README.md#database--cache)    |
 | `tests/`           | Backend tests: `unit/` (no services) and `integration/` (needs `poe infra`) |                                 |
-| `scripts/`, `packaging/`, `deploy/` | Dev tasks, macOS / Docker builds and install bundles |                                 |
+| `scripts/`, `packaging/`, `deploy/` | Dev tasks, desktop (macOS / Windows) and Docker builds, install bundles | [docs/install](docs/install/README.md) |
 
 Both backend and frontend follow **MVC**. Please keep new code in the same shape:
 
@@ -93,6 +93,22 @@ docs: explain MediaMTX port settings
 - Add screenshots or a short recording for UI changes.
 - Accept the [CLA](CLA.md) when the bot asks (first pull request only), and make sure CI is green. A maintainer will review it; please answer review comments with new commits instead of force-pushing during review.
 - Once approved, the maintainer squash-merges it. `develop` is merged into `main` for releases.
+
+## Releases (maintainers)
+
+1. On `develop`, set the new `version` in `pyproject.toml` (for example `0.2.0`, or `0.2.0-rc.1` for a pre-release),
+   run `uv lock`, and merge `develop` into `main`.
+2. Tag `main` and push the tag:
+
+   ```bash
+   git checkout main && git pull
+   git tag v0.2.0 && git push origin v0.2.0
+   ```
+
+The [Release workflow](.github/workflows/release.yml) builds the Docker image (pushed to `ghcr.io`), the macOS `.dmg`
+files and the Windows installer, and publishes them as a GitHub Release. To test the builds without publishing, run
+the workflow manually from the Actions tab. Local builds: `scripts/build_docker.sh`, `scripts/build_macos.sh`,
+`scripts/build_windows.ps1`.
 
 ## Code of conduct
 
