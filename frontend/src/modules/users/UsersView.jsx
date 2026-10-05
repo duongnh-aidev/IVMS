@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 
-export default function UsersView({ presenter }) {
+export default function UsersView({ controller }) {
   const {
     uAdd,
     uLog,
@@ -16,7 +16,7 @@ export default function UsersView({ presenter }) {
     uTab,
     uTabUsers,
     uTabs,
-  } = usePresenter(presenter);
+  } = useController(controller);
   // Each tab starts scrolled to the top.
   const uScrollRef = useRef(null);
   useLayoutEffect(() => {

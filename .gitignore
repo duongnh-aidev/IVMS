@@ -31,6 +31,7 @@ MANIFEST
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!packaging/*/IVMS.spec
 
 # Installer logs
 pip-log.txt
@@ -221,5 +222,3 @@ docker/!*.gitkeep
 # Node
 node_modules/
 
-# C++ build output
-ai/build/

@@ -1,6 +1,6 @@
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 
-export default function LiveViewView({ presenter }) {
+export default function LiveViewView({ controller }) {
   const {
     deviceCount,
     deviceList,
@@ -15,7 +15,7 @@ export default function LiveViewView({ presenter }) {
     pinnedCountColor,
     pinnedList,
     tiles,
-  } = usePresenter(presenter);
+  } = useController(controller);
   return (
     <>
       <header

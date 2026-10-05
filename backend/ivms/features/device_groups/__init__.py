@@ -1,6 +1,5 @@
 """Device groups: the site / building / floor tree devices are filed under (docs §4.4)."""
 
-from .router import router
-from .service import DeviceGroupService
+from .controller import DeviceGroupController, router
 
-__all__ = ["DeviceGroupService", "router"]
+__all__ = ["DeviceGroupController", "router"]

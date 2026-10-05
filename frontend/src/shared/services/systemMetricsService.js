@@ -1,4 +1,4 @@
-import { Observable } from '../../core/viper';
+import { Observable } from '../../core/mvc';
 
 const SAMPLES = 60;
 

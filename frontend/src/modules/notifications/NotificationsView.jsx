@@ -1,8 +1,8 @@
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 import { Fragment } from 'react';
 
-export default function NotificationsView({ presenter }) {
-  const { nEmpty, nFilters, nGroups, nMarkAll } = usePresenter(presenter);
+export default function NotificationsView({ controller }) {
+  const { nEmpty, nFilters, nGroups, nMarkAll } = useController(controller);
   return (
     <>
       <header

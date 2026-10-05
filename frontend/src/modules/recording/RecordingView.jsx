@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 
-export default function RecordingView({ presenter }) {
+export default function RecordingView({ controller }) {
   const {
     addHoliday,
     holidays,
@@ -14,12 +14,12 @@ export default function RecordingView({ presenter }) {
     recTemplates,
     saveSched,
     setRecTarget,
-  } = usePresenter(presenter);
+  } = useController(controller);
   // A paint stroke ends wherever the mouse is released.
   useEffect(() => {
-    window.addEventListener('mouseup', presenter.endPaint);
-    return () => window.removeEventListener('mouseup', presenter.endPaint);
-  }, [presenter]);
+    window.addEventListener('mouseup', controller.endPaint);
+    return () => window.removeEventListener('mouseup', controller.endPaint);
+  }, [controller]);
   return (
     <>
       <header

@@ -1,0 +1,27 @@
+# MediaMTX for an IVMS install (deploy/docker). The IVMS app adds one path per camera
+# ("cam-<device id>") through the Control API; nothing is configured statically.
+
+logLevel: info
+
+api: yes
+apiAddress: :9997 # reachable inside the compose network only (not published)
+metrics: no
+
+authInternalUsers:
+  # Anyone may read streams (browser, AI service); IVMS itself decides who sees which camera.
+  # "api" is safe to grant because port 9997 is not published outside the compose network.
+  # No "publish": cameras are pulled by MediaMTX, nobody pushes streams in.
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: read
+      - action: playback
+      - action: api
+
+webrtcLocalUDPAddress: :8189
+# Add this machine's LAN IP here if browsers on other machines must play WebRTC
+webrtcAdditionalHosts: []
+
+paths:
+  all_others:

@@ -1,0 +1,206 @@
+name: Release
+
+# Push a tag vX.Y.Z (matching `version` in pyproject.toml) to publish a release:
+#   - Docker image ghcr.io/<owner>/ivms:<version> (+ :latest) for linux/amd64 and linux/arm64 (GitHub Packages)
+#   - GitHub Release with the macOS .dmg (arm64, x86_64), Windows setup .exe, Docker install bundle and SHA256SUMS
+# A tag with a suffix (v1.2.0-rc.1) makes a pre-release and does not move :latest.
+# Run it manually (Actions > Release > Run workflow) to build everything without publishing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  UV_LOCKED: "1"
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            [[ "$GITHUB_REF_NAME" == "v$version" ]] || {
+              echo "::error::Tag $GITHUB_REF_NAME does not match pyproject.toml version $version"; exit 1; }
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+          [[ "$version" == *-* ]] && echo "prerelease=true" >> "$GITHUB_OUTPUT" || echo "prerelease=false" >> "$GITHUB_OUTPUT"
+
+  docker:
+    name: Docker image (Linux)
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: needs.version.outputs.publish == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build${{ needs.version.outputs.publish == 'true' && ' and push' || '' }}
+        env:
+          PUBLISH: ${{ needs.version.outputs.publish }}
+          IVMS_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          export IVMS_IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ivms"
+          if [[ "$PUBLISH" == true ]]; then
+            scripts/build_docker.sh --push
+          else
+            scripts/build_docker.sh --platforms linux/amd64 # dry run: one arch, local image store
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: docker
+          path: dist/docker/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS (${{ matrix.arch }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, arch: arm64 }
+          - { runner: macos-15-intel, arch: x86_64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .python-version
+          enable-cache: true
+
+      # Optional: sign + notarize when the Apple secrets are set; otherwise an unsigned (ad-hoc) build
+      - name: Import signing certificate
+        id: sign
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [[ -z "$MACOS_CERTIFICATE" ]]; then
+            echo "::notice::No MACOS_CERTIFICATE secret: building an unsigned app"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/build.keychain-db" pass="$(openssl rand -hex 16)"
+          security create-keychain -p "$pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$pass" "$keychain"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$pass" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          rm "$RUNNER_TEMP/cert.p12"
+          echo "identity=$MACOS_SIGN_IDENTITY" >> "$GITHUB_OUTPUT"
+          if [[ -n "$APPLE_ID" ]]; then
+            xcrun notarytool store-credentials ivms-notary --keychain "$keychain" \
+              --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+            echo "notary=ivms-notary" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        env:
+          SIGN_IDENTITY: ${{ steps.sign.outputs.identity }}
+          NOTARY_PROFILE: ${{ steps.sign.outputs.notary }}
+        run: |
+          args=()
+          [[ -z "$SIGN_IDENTITY" ]] || args+=(--sign "$SIGN_IDENTITY")
+          [[ -z "$NOTARY_PROFILE" ]] || args+=(--notarize "$NOTARY_PROFILE")
+          scripts/build_macos.sh ${args[@]+"${args[@]}"}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-${{ matrix.arch }}
+          path: dist/macos/*.dmg
+          if-no-files-found: error
+
+  windows:
+    name: Windows (x64)
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .python-version
+          enable-cache: true
+      - name: Build
+        shell: pwsh
+        run: scripts/build_windows.ps1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64
+          path: dist/windows/*.exe
+          if-no-files-found: error
+
+  publish:
+    name: GitHub Release
+    needs: [version, docker, macos, windows]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Checksums
+        working-directory: assets
+        run: sha256sum -- * | tee SHA256SUMS
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ivms:$VERSION"
+          cat > notes.md <<EOF
+          **Docker (Linux):** \`docker pull $image\`, or download \`ivms-docker-$VERSION.tar.gz\` below and run \`./install.sh\`.
+          **macOS:** \`.dmg\` for Apple silicon (arm64) or Intel (x86_64). **Windows:** \`-x64-setup.exe\`.
+
+          Installation guide: [docs/install](https://github.com/$GITHUB_REPOSITORY/blob/v$VERSION/docs/install/README.md)
+          EOF
+          flags=(--title "IVMS $VERSION" --notes-file notes.md --generate-notes --verify-tag)
+          [[ "$PRERELEASE" != true ]] || flags+=(--prerelease)
+          gh release create "v$VERSION" assets/* "${flags[@]}"

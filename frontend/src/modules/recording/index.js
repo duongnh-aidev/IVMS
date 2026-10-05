@@ -1,9 +1,9 @@
 import { createElement } from 'react';
-import { RecordingInteractor } from './RecordingInteractor';
-import { RecordingPresenter } from './RecordingPresenter';
+import { RecordingModel } from './RecordingModel';
+import { RecordingController } from './RecordingController';
 import RecordingView from './RecordingView';
 
 export function buildRecording({ toast }) {
-  const presenter = new RecordingPresenter({ interactor: new RecordingInteractor(), toast });
-  return { presenter, View: () => createElement(RecordingView, { presenter }) };
+  const controller = new RecordingController({ model: new RecordingModel(), toast });
+  return { controller, View: () => createElement(RecordingView, { controller }) };
 }

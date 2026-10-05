@@ -1,7 +1,7 @@
 # IVMS backend: REST API design
 
 Status: draft · Owner: backend · Implements the data the frontend modules mock today
-(`frontend/src/shared/services/*`, `frontend/src/modules/*/…Interactor.js`).
+(`frontend/src/shared/services/*`, `frontend/src/modules/*/…Model.js`).
 
 ## 1. Architecture
 
@@ -10,14 +10,14 @@ Browser (React)  ──REST /api/v1──▶  Backend (FastAPI, Python)  ──S
       │                                │   │                     ──────▶  Redis (cache only)
       │ WebRTC / HLS                   │   └── Control API ─────────────▶  MediaMTX (stream relay)
       └────────────────────────────────┼──────────────────────────────▶  MediaMTX
-                                       └── internal events ◀──────────  AI service (DeepStream)
+                                       └── internal events ◀──────────  AI service
 ```
 
 - **Backend** owns all business data and is the only writer to PostgreSQL.
 - **Video never goes through the backend.** The backend registers each camera as a MediaMTX path
   and hands the browser a WebRTC/HLS URL; the AI service reads the same path over RTSP.
 - **Prisma is the migration tool only** (`db/prisma/schema.prisma`). The backend uses `asyncpg`
-  with hand-written SQL inside each feature's repository.
+  with hand-written SQL inside each feature's model.
 
 ### Stack
 
@@ -25,13 +25,13 @@ Browser (React)  ──REST /api/v1──▶  Backend (FastAPI, Python)  ──S
 | -------------- | ------------------------------------------------------------- |
 | HTTP framework | FastAPI + Uvicorn                                             |
 | Validation     | Pydantic v2 (camelCase JSON, snake_case Python)               |
-| Database       | asyncpg connection pool, raw SQL per repository               |
+| Database       | asyncpg connection pool, raw SQL per model                    |
 | Cache          | Redis (dashboard aggregates, MediaMTX status, rate limits)    |
-| Auth           | JWT access token + rotating refresh token (planned)           |
+| Auth           | JWT access token (HS256, `ACCESS_TOKEN_TTL_SECONDS`, default 30 min), Argon2id password hashes. No refresh token: when it expires the user signs in again |
 | Secrets        | Camera passwords encrypted with Fernet (`SECRET_KEY`)         |
 | Outbound HTTP  | httpx (MediaMTX Control API)                                  |
 
-## 2. Code structure: one package per feature
+## 2. Code structure: MVC, one package per feature
 
 ```
 backend/ivms/
@@ -47,10 +47,9 @@ backend/ivms/
 └── features/
     ├── devices/           # reference implementation (done)
     │   ├── __init__.py    # exports `router` (public API of the feature)
-    │   ├── router.py      # HTTP only: parse request, call service, shape response
-    │   ├── schemas.py     # request/response models
-    │   ├── service.py     # business rules, orchestration, no SQL, no HTTP
-    │   └── repository.py  # SQL only
+    │   ├── model.py       # Model: data access, SQL only
+    │   ├── view.py        # View: request/response representation (Pydantic, camelCase on the wire)
+    │   └── controller.py  # Controller: business rules + orchestration (class), then the HTTP routes
     ├── device_groups/
     ├── streams/           # MediaMTX client + live stream URLs
     ├── auth/
@@ -67,10 +66,11 @@ backend/ivms/
 
 Rules:
 
-1. **Layers point one way:** `router → service → repository`. Routers never touch SQL; repositories
-   never raise HTTP errors.
-2. **Features talk through services or small interfaces, never through another feature's
-   repository.** Example: `devices.service` depends on a `StreamRelay` protocol that
+1. **Layers point one way:** `controller → model`, and the controller returns `view` objects. The
+   controller class holds the rules and has no HTTP; the route functions under it only parse the
+   request, call the class and shape the response. Models never raise HTTP errors.
+2. **Features talk through controllers or small interfaces, never through another feature's
+   model.** Example: `devices.controller` depends on a `StreamRelay` protocol that
    `streams.mediamtx` implements, so devices can be unit-tested with a fake.
 3. A feature is mounted in `app.py` with one line. Deleting a feature folder plus that line removes it.
 4. Tests mirror the layout: `tests/unit/features/<feature>/`, `tests/integration/features/<feature>/`.
@@ -90,7 +90,7 @@ Rules:
 | Filter / sort  | Query params named after fields (`?status=online&groupId=…&q=lobby`), `?sort=-createdAt`. |
 | Errors         | RFC 9457 `application/problem+json`: `{ type, title, status, detail, errors? }`. Validation → 422 with `errors: [{ field, message }]`. |
 | Long jobs      | `202 Accepted` + job resource (`/exports/{id}`) the client polls or receives over WebSocket. |
-| Auth           | `Authorization: Bearer <access token>` on every route except `/auth/login`, `/auth/refresh`, `/system/health`. |
+| Auth           | `Authorization: Bearer <access token>` on every route except `/auth/login` (later also `/system/health`). Missing, invalid or expired token → 401 problem+json with `WWW-Authenticate: Bearer`; an expired token's `detail` is "Session expired, please sign in again". |
 | Authorization  | Each route declares one permission key (see §5); device-scoped routes also filter by the role's device groups. |
 | Realtime       | Out of REST scope: `GET /api/v1/ws` (WebSocket) pushes `device.status`, `event.created`, `notification.created`, `export.updated`. |
 
@@ -106,10 +106,8 @@ Legend: **Perm** is the permission key required (see §5). `—` = any signed-in
 
 | Method | Path | Perm | Purpose |
 | ------ | ---- | ---- | ------- |
-| POST | `/auth/login` | public | `{ username, password }` → `{ accessToken, refreshToken, expiresIn, user }`. 401 with `remainingAttempts`; 423 after 5 failures. |
-| POST | `/auth/refresh` | public | Rotate refresh token. |
-| POST | `/auth/logout` | — | Revoke the refresh token. |
-| GET | `/auth/me` | — | Current user + role + effective permissions and scopes. |
+| POST | `/auth/login` | public | ✅ `{ username, password }` → `{ accessToken, tokenType: "bearer", expiresIn, user }`. Username is case-insensitive. 401 "Wrong username or password" (same for unknown user), 401 for a non-`active` account. Later: `remainingAttempts`, 423 after 5 failures. |
+| GET | `/auth/me` | — | ✅ Current user. Later: + role, effective permissions and scopes. |
 | POST | `/auth/password` | — | Change own password `{ currentPassword, newPassword }`. |
 
 ### 4.2 users · screen: users
@@ -264,7 +262,7 @@ filtered by the user's notification preferences and device scopes.
 
 ## 5. Authorization model
 
-Permission keys (match `PERMISSIONS` in `frontend/src/modules/users/UsersInteractor.js`):
+Permission keys (match `PERMISSIONS` in `frontend/src/modules/users/UsersModel.js`):
 
 | Key | Grants |
 | --- | ------ |
@@ -288,11 +286,10 @@ Permission keys (match `PERMISSIONS` in `frontend/src/modules/users/UsersInterac
 | ----- | ----------- | ------- |
 | `device_groups` | id, name, parent_id → device_groups | device_groups |
 | `devices` | id, seq (→ code), name, host, port, path, username, password_enc, group_id, model, firmware, status, last_seen_at | devices |
-| `users` | id, name, username ⓤ, email, password_hash, role_key, status, failed_logins, last_login_at | users |
+| `users` | ✅ id, name, username ⓤ (lowercase), password_hash, status, last_login_at. Later: email, role_key, failed_logins | auth (→ users) |
 | `roles` | key, name, locked | users |
 | `role_permissions` | role_key, permission | users |
 | `role_scopes` | role_key, group_id | users |
-| `refresh_tokens` | id, user_id, token_hash, expires_at, revoked_at | auth |
 | `audit_logs` | id, at, user_id, action, category, target, ip | audit |
 | `recording_schedules` | target ⓤ, grid (jsonb), pre_event_sec, post_event_sec, stream | recording |
 | `recording_holidays` | id, date ⓤ, name, mode | recording |
@@ -311,11 +308,12 @@ partition by month once volume needs it.
 ## 7. Delivery order
 
 1. ✅ Core (config, DB pool, errors, schemas) + **devices** + **device-groups** + MediaMTX sync.
-2. **auth** + **users** (roles, scopes) → then switch `core/deps.py` from "open" to real permission checks.
+2. ✅ **auth** (sign-in, JWT on every route; users created with `uv run poe create-user <username>`).
+   Next: **users** (CRUD, roles, scopes) → then `core/deps.require()` also checks the permission.
 3. **streams** (live URLs, status polling) → frontend Live View on real cameras.
 4. **events** ingest from the AI service + **notifications** + WebSocket.
 5. **recording** + **storage** + **playback** (segments, bookmarks, exports).
 6. **dashboard**, **audit**, **system**.
 
-Each step: Prisma migration → repository → service (unit tests with fakes) → router (integration
+Each step: Prisma migration → model → controller (unit tests with fakes) → routes (integration
 tests against the compose stack) → swap the matching frontend mock service for an API client.

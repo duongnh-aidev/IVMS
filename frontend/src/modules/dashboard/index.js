@@ -1,13 +1,12 @@
 import { createElement } from 'react';
-import { DashboardInteractor } from './DashboardInteractor';
-import { DashboardPresenter } from './DashboardPresenter';
-import { DashboardRouter } from './DashboardRouter';
+import { DashboardModel } from './DashboardModel';
+import { DashboardController } from './DashboardController';
 import DashboardView from './DashboardView';
 
 export function buildDashboard({ devices, shell }) {
-  const presenter = new DashboardPresenter({
-    interactor: new DashboardInteractor({ devices }),
-    router: new DashboardRouter({ shell }),
+  const controller = new DashboardController({
+    model: new DashboardModel({ devices }),
+    shell,
   });
-  return { presenter, View: () => createElement(DashboardView, { presenter }) };
+  return { controller, View: () => createElement(DashboardView, { controller }) };
 }

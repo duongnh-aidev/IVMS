@@ -1,4 +1,5 @@
-import { usePresenter } from '../../core/viper';
+import logoUrl from '../../assets/logo.png';
+import { useController } from '../../core/mvc';
 
 const label = { fontSize: 13, fontWeight: 600, color: '#171A20' };
 const input = {
@@ -14,16 +15,8 @@ const input = {
   transition: 'box-shadow .2s,border-color .2s',
 };
 const inputClass = 'hover-border-aeb0b4 focus-ring';
-const dot = (bg) => ({
-  width: 12,
-  height: 12,
-  borderRadius: '50%',
-  background: bg,
-  boxShadow: 'inset 0 0 0 0.5px rgba(0,0,0,.15)',
-});
-
 /** Sign-in window. */
-export default function LoginView({ presenter }) {
+export default function LoginView({ controller }) {
   const {
     showServer,
     server,
@@ -47,9 +40,12 @@ export default function LoginView({ presenter }) {
     loading,
     submit,
     submitLabel,
+    title,
+    subtitle,
+    passPlaceholder,
     editionLabel,
     editionColor,
-  } = usePresenter(presenter);
+  } = useController(controller);
 
   return (
     <div
@@ -60,32 +56,23 @@ export default function LoginView({ presenter }) {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '40px 16px',
-        background: '#E8E9EB',
+        background: '#FFFFFF',
       }}
     >
       <div
         style={{
           width: 380,
           flex: 'none',
-          background: '#FFFFFF',
-          borderRadius: 12,
-          boxShadow: '0 0 0 0.5px rgba(0,0,0,.18),0 22px 50px rgba(0,0,0,.22),0 6px 14px rgba(0,0,0,.08)',
-          overflow: 'hidden',
           color: '#171A20',
         }}
       >
-        <div style={{ height: 28, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px' }}>
-          <div style={dot('#FF5F57')} />
-          <div style={{ ...dot('#D0D1D2'), boxShadow: 'inset 0 0 0 0.5px rgba(0,0,0,.1)' }} />
-          <div style={{ ...dot('#D0D1D2'), boxShadow: 'inset 0 0 0 0.5px rgba(0,0,0,.1)' }} />
-        </div>
-
-        <div style={{ padding: '16px 36px 28px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+        <div style={{ padding: '28px 36px', display: 'flex', flexDirection: 'column', gap: 28 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <img src={logoUrl} alt="" width={64} height={64} style={{ display: 'block', marginBottom: 8 }} />
             <div style={{ fontSize: 20, lineHeight: '26px', fontWeight: 600 }}>
-              Sign in to <span style={{ color: '#3E6AE1' }}>IVMS</span>
+              {title} <span style={{ color: '#3E6AE1' }}>IVMS</span>
             </div>
-            <div style={{ fontSize: 13, lineHeight: '18px', color: '#5C5E62' }}>Video Management System</div>
+            <div style={{ fontSize: 13, lineHeight: '18px', color: '#5C5E62' }}>{subtitle}</div>
           </div>
 
           <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -127,7 +114,7 @@ export default function LoginView({ presenter }) {
                   value={pass}
                   onChange={setPass}
                   type={passType}
-                  placeholder="Password"
+                  placeholder={passPlaceholder}
                   autoComplete="current-password"
                   style={{
                     ...input,

@@ -1,4 +1,4 @@
-// Composition root: creates the services and assembles every VIPER module.
+// Composition root: creates the services and assembles every module.
 // This is the only place that knows how modules are wired to each other.
 
 import { DeviceService } from '../shared/services/deviceService';
@@ -21,25 +21,29 @@ import { buildStorage } from '../modules/storage';
 import { buildSystemMonitor } from '../modules/systemMonitor';
 import { buildUsers } from '../modules/users';
 
-/** Sign-in screen. */
-export function createLogin({ appNavigator, showServer = true, edition = 'Standard', simulateError = false }) {
-  return buildLogin({ appNavigator, showServer, edition, simulateError }).View;
+/**
+ * Sign-in screen.
+ * @param showServer  show server/port fields (the web client always talks to the server it was loaded from)
+ */
+export function createLogin({ appNavigator, auth, showServer = false, edition = 'Standard' }) {
+  return buildLogin({ appNavigator, auth, showServer, edition }).View;
 }
 
 /**
  * A signed-in session: fresh services and modules, returns the main window view.
  * @param initialScreen  dashboard | live | playback | devices | recording | storage | users | notifications | settings | help
- * @param cameraCount    number of demo cameras (0–16)
  */
-export function createSession({ appNavigator, initialScreen = 'live', cameraCount = 13 }) {
+export function createSession({ appNavigator, api, auth, initialScreen = 'live' }) {
   const services = {
-    devices: new DeviceService(cameraCount),
+    devices: new DeviceService({ api }),
     notifications: new NotificationService(),
     archive: new RecordingArchiveService(),
     metrics: new SystemMetricsService(),
     toast: new ToastService(),
     appNavigator,
+    auth,
   };
+  services.devices.load().catch((err) => services.toast.error(err.message));
 
   const shell = buildShell({ ...services, initialScreen });
   const deviceEditor = buildDeviceEditor(services);

@@ -1,6 +1,6 @@
 # MediaMTX — stream relay between IP cameras and IVMS consumers.
 #
-#   camera --RTSP--> MediaMTX --RTSP-->  AI service (DeepStream)
+#   camera --RTSP--> MediaMTX --RTSP-->  AI service
 #                             --WebRTC/HLS--> browser (Live View)
 #
 # Each camera is one path (e.g. "cam-01"), pulled from the camera once and fanned

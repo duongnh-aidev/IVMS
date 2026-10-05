@@ -1,6 +1,6 @@
-import { usePresenter } from '../../core/viper';
+import { useController } from '../../core/mvc';
 
-export default function DeviceEditorView({ presenter }) {
+export default function DeviceEditorView({ controller }) {
   const {
     open,
     addCta,
@@ -12,6 +12,7 @@ export default function DeviceEditorView({ presenter }) {
     fName,
     fNameBorder,
     fPass,
+    fPassPlaceholder,
     fPassShown,
     fPassTitle,
     fPassType,
@@ -36,7 +37,7 @@ export default function DeviceEditorView({ presenter }) {
     testMsg,
     testing,
     toggleFPass,
-  } = usePresenter(presenter);
+  } = useController(controller);
   if (!open) return null;
   return (
     <div
@@ -258,7 +259,7 @@ export default function DeviceEditorView({ presenter }) {
                 value={fPass}
                 onChange={setFPass}
                 type={fPassType}
-                placeholder="Password"
+                placeholder={fPassPlaceholder}
                 autoComplete="new-password"
                 style={{
                   flex: 1,

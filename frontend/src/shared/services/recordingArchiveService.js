@@ -7,6 +7,13 @@ const EVENT_TYPES = [
   ['Signal loss', '#E5484D'],
 ];
 
+/** Stable positive number for a device id (UUID string). */
+function hash(id) {
+  let h = 7;
+  for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h + 1;
+}
+
 /**
  * Recorded footage index per camera: recorded segments [startSec, endSec] and
  * events {t, type, color} for a day. Deterministic mock until the NVR API exists.
@@ -16,7 +23,7 @@ export class RecordingArchiveService {
 
   day(cameraId) {
     if (this.#cache[cameraId]) return this.#cache[cameraId];
-    let seed = (cameraId + 3) * 9973 + 17;
+    let seed = (hash(cameraId) % 100000) * 9973 + 17;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     const segs = [];
     let cur = 0;

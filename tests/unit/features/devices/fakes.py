@@ -6,11 +6,11 @@ from uuid import UUID, uuid4
 
 from ivms.core.crypto import SecretBox
 from ivms.core.errors import UpstreamError
-from ivms.features.devices.service import DeviceService
+from ivms.features.devices.controller import DeviceController
 from ivms.features.streams import ProbeResult
 
 
-class FakeDeviceRepo:
+class FakeDeviceModel:
     """Rolls back writes made inside a failed transaction, like PostgreSQL would."""
 
     def __init__(self):
@@ -111,7 +111,7 @@ class FakeProber:
         return self.result
 
 
-def make_service(groups: FakeGroups | None = None):
-    repo, relay, prober = FakeDeviceRepo(), FakeRelay(), FakeProber()
-    service = DeviceService(repo, groups or FakeGroups(), relay, prober, SecretBox("test-secret"))
-    return service, repo, relay, prober
+def make_controller(groups: FakeGroups | None = None):
+    model, relay, prober = FakeDeviceModel(), FakeRelay(), FakeProber()
+    controller = DeviceController(model, groups or FakeGroups(), relay, prober, SecretBox("test-secret"))
+    return controller, model, relay, prober

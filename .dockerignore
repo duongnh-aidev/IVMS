@@ -1,0 +1,16 @@
+# Only what the Dockerfile copies: frontend/, backend/, db/prisma/migrations, pyproject.toml, uv.lock, README.md
+**/node_modules
+**/__pycache__
+**/*.pyc
+.venv
+.git
+.github
+.env
+dist
+build
+docker
+deploy
+tests
+scripts
+frontend/dist
+db/node_modules

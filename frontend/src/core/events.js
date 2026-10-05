@@ -1,4 +1,4 @@
-// Adapters that turn DOM events into plain values, so presenter intents stay DOM-free.
+// Adapters that turn DOM events into plain values, so controller intents stay DOM-free.
 
 /** `onChange` handler that passes the input's value. */
 export const withValue = (fn) => (e) => fn(e.target.value);

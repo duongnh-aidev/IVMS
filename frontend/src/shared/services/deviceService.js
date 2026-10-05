@@ -1,102 +1,96 @@
-import { Observable } from '../../core/viper';
-import { CUSTOM_ID_BASE, DEMO_CAMERAS, DEVICE_GROUPS, deviceCode } from '../entities/device';
+import { Observable } from '../../core/mvc';
+import { toDevice } from '../entities/device';
 
-const FIRMWARE = ['V2.3.1', 'V2.3.1', 'V2.4.0', 'V2.2.8'];
-const MODELS = ['IPC-D2140', 'IPC-B5160', 'IPC-T3240', 'NVR-3208'];
-// Group of built-in camera i (cycled).
-const GROUP_OF = [
-  'hq-a-1',
-  'hq-a-1',
-  'hq-a-2',
-  'hq-b',
-  'hq-a-2',
-  'hq-b',
-  'wh',
-  'hq-a-1',
-  'wh',
-  'hq-b',
-  'hq-a-2',
-  'wh',
-  'hq-a-1',
-  'hq-b',
-  'hq-a-2',
-  'wh',
-];
-const GROUP_NAME = Object.fromEntries(DEVICE_GROUPS.map(([id, label]) => [id, label]));
+// Largest page the API serves (docs/backend-api.md §4.5)
+const PAGE = 200;
 
 /**
- * Device repository (in-memory mock until the backend API exists).
- * Shared by every module that lists, names or edits devices.
+ * Devices and device groups from the IVMS server, cached so views can read them
+ * synchronously. Shared by every module that lists, names or edits devices.
+ * Writes go to the API, then the cache is reloaded and listeners are notified.
  */
 export class DeviceService extends Observable {
-  #custom = [];
-  #edits = {};
-  #deleted = [];
+  #devices = []; // API devices, in display order
+  #groups = []; // API groups, depth-first
+  #groupsById = new Map();
+  #records = [];
 
-  /** @param {number} demoCount number of built-in demo cameras (0–16) */
-  constructor(demoCount = 13) {
+  constructor({ api }) {
     super();
-    this.demoCount = Math.min(demoCount, DEMO_CAMERAS.length);
+    this.api = api;
   }
 
-  /** Visible device ids, in display order. */
+  /** Fetches devices and groups. Rejects with an ApiError. */
+  async load() {
+    const [groups, devices] = await Promise.all([this.api.get('/device-groups'), this.#fetchDevices()]);
+    this.#groups = groups;
+    this.#groupsById = new Map(groups.map((g) => [g.id, g]));
+    this.#devices = devices;
+    this.#records = devices.map((d) => toDevice(d, this.#groupsById));
+    this.emit();
+  }
+
+  async #fetchDevices() {
+    const all = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const page = await this.api.get(`/devices?sort=code&limit=${PAGE}&offset=${offset}`);
+      all.push(...page.items);
+      if (all.length >= page.total || page.items.length === 0) return all;
+    }
+  }
+
+  /** Device ids, in display order. */
   ids() {
-    return [
-      ...Array.from({ length: this.demoCount }, (_, i) => i),
-      ...this.#custom.map((_, k) => CUSTOM_ID_BASE + k),
-    ].filter((i) => !this.#deleted.includes(i));
+    return this.#records.map((d) => d.i);
+  }
+
+  /** Display records (see `toDevice`). */
+  list() {
+    return this.#records;
+  }
+
+  /** The API device (all fields, e.g. for the edit form), or undefined. */
+  get(id) {
+    return this.#devices.find((d) => d.id === id);
   }
 
   nameOf(id) {
-    const edit = this.#edits[id];
-    if (edit) return edit.name;
-    return id >= CUSTOM_ID_BASE ? this.#custom[id - CUSTOM_ID_BASE].name : DEMO_CAMERAS[id];
+    return this.get(id)?.name ?? '—';
   }
 
-  /** Device entities for all visible ids. */
-  list() {
-    return this.ids().map((i) => this.#record(i));
+  codeOf(id) {
+    return this.get(id)?.code ?? '—';
   }
 
-  #record(i) {
-    let d;
-    if (i >= CUSTOM_ID_BASE) {
-      const c = this.#custom[i - CUSTOM_ID_BASE];
-      d = { i, status: 'Online', name: c.name, id: deviceCode(i), ip: c.ip, fw: '—', model: 'RTSP', account: c.user };
-    } else {
-      const status = i % 7 === 3 ? 'Error' : i % 5 === 4 ? 'Offline' : 'Online';
-      d = {
-        i,
-        status,
-        name: DEMO_CAMERAS[i],
-        id: deviceCode(i),
-        ip: '192.168.1.' + (101 + i) + ':8000',
-        fw: FIRMWARE[i % 4],
-        model: MODELS[i % 4],
-        account: 'admin',
-      };
-    }
-    d.grp = i >= CUSTOM_ID_BASE ? 'hq-a-1' : GROUP_OF[i % GROUP_OF.length];
-    d.grpName = (d.grp.startsWith('hq-a') ? 'Building A · ' : '') + GROUP_NAME[d.grp];
-    const edit = this.#edits[i];
-    if (edit) Object.assign(d, { name: edit.name, ip: edit.ip, account: edit.user });
-    return d;
+  /** API groups, depth-first: { id, name, parentId, depth, deviceCount }. */
+  groups() {
+    return this.#groups;
   }
 
-  /** @param {{name: string, ip: string, user: string}} rec  ip is "host:port" */
-  add(rec) {
-    this.#custom = [...this.#custom, rec];
-    this.emit();
-    return CUSTOM_ID_BASE + this.#custom.length - 1;
+  /** @param fields  { name, host, port, path, username, password, groupId?, model?, firmware? } */
+  async add(fields) {
+    const device = await this.api.post('/devices', fields);
+    await this.load();
+    return device;
   }
 
-  update(id, rec) {
-    this.#edits = { ...this.#edits, [id]: rec };
-    this.emit();
+  /** Omitted fields are unchanged; omit `password` to keep the stored one. */
+  async update(id, fields) {
+    const device = await this.api.patch(`/devices/${id}`, fields);
+    await this.load();
+    return device;
   }
 
-  remove(id) {
-    this.#deleted = [...this.#deleted, id];
-    this.emit();
+  async remove(id) {
+    await this.api.delete(`/devices/${id}`);
+    await this.load();
+  }
+
+  /**
+   * Tests an RTSP connection on the server: { reachable, codec, error }.
+   * With `deviceId` and no `password`, the device's stored password is used.
+   */
+  probe(connection) {
+    return this.api.post('/devices/probe', connection);
   }
 }

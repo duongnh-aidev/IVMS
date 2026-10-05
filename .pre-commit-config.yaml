@@ -30,11 +30,3 @@ repos:
     hooks:
       - id: prettier
         files: ^frontend/
-
-  # C++ formatting (ai/, style in ai/.clang-format)
-  - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v23.1.2
-    hooks:
-      - id: clang-format
-        files: ^ai/
-        types_or: [c++, c]

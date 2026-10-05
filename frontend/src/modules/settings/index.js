@@ -1,18 +1,17 @@
 import { createElement } from 'react';
-import { SettingsInteractor } from './SettingsInteractor';
-import { SettingsPresenter } from './SettingsPresenter';
-import { SettingsRouter } from './SettingsRouter';
+import { SettingsModel } from './SettingsModel';
+import { SettingsController } from './SettingsController';
 import SettingsView from './SettingsView';
 
-export function buildSettings({ toast, appNavigator }) {
-  const presenter = new SettingsPresenter({
-    interactor: new SettingsInteractor(),
-    router: new SettingsRouter({ appNavigator }),
+export function buildSettings({ toast, auth }) {
+  const controller = new SettingsController({
+    model: new SettingsModel(),
+    auth,
     toast,
   });
   return {
-    presenter,
-    input: { showSection: presenter.showSection },
-    View: () => createElement(SettingsView, { presenter }),
+    controller,
+    input: { showSection: controller.showSection },
+    View: () => createElement(SettingsView, { controller }),
   };
 }

@@ -51,24 +51,5 @@ services:
       timeout: 5s
       retries: 5
 
-  # AI inference (C++ / DeepStream). Needs an NVIDIA GPU + NVIDIA Container Toolkit (Linux or Jetson),
-  # so it is not part of `poe infra`; start it with `uv run poe ai` on a GPU machine.
-  ai:
-    profiles: [gpu]
-    build: ./ai
-    environment:
-      MEDIAMTX_RTSP_URL: rtsp://mediamtx:8554
-      CAMERAS: ${AI_CAMERAS:-demo}
-    depends_on:
-      mediamtx:
-        condition: service_healthy
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
 volumes:
   postgres-data:

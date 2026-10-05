@@ -66,3 +66,31 @@ model Device {
   @@index([groupId])
   @@map("devices")
 }
+
+// ---------------------------------------------------------------------------
+// Users (backend/ivms/features/auth)
+// ---------------------------------------------------------------------------
+
+enum UserStatus {
+  active
+  locked
+  invited
+
+  @@map("user_status")
+}
+
+// A person who signs in. Only `active` users can sign in.
+model User {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // Stored lowercase (backend normalizes), so the unique index is case-insensitive
+  username     String     @unique @db.VarChar(50)
+  name         String     @db.VarChar(100)
+  // Argon2id hash (backend/ivms/core/security.py)
+  passwordHash String     @map("password_hash")
+  status       UserStatus @default(active)
+  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@map("users")
+}
