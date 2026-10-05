@@ -1,5 +1,5 @@
 # PyInstaller spec for IVMS.app. Run through scripts/build_macos.sh, which first builds the frontend,
-# downloads MediaMTX into build/macos/ and renders the icon.
+# downloads MediaMTX and PostgreSQL into build/macos/ and renders the icon.
 import tomllib
 from pathlib import Path
 
@@ -16,6 +16,7 @@ a = Analysis(
         (str(ROOT / "frontend" / "dist"), "web"),
         (str(ROOT / "db" / "prisma" / "migrations"), "migrations"),
         (str(ROOT / "deploy" / "docker" / "mediamtx.yml"), "."),
+        (str(BUILD / "postgres"), "postgres"),  # bundled server, from packaging/desktop/prepare_postgres.py
         *copy_metadata("ivms"),  # /system/health reports the version
     ],
     binaries=[(str(BUILD / "mediamtx"), "bin")],

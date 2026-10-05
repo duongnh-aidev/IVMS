@@ -1,22 +1,28 @@
-"""IVMS desktop entry point (macOS IVMS.app, Windows IVMS.exe): starts MediaMTX and the API, then shows
-the web UI in a native window.
+"""IVMS desktop entry point (macOS IVMS.app, Windows IVMS.exe).
 
-PostgreSQL is not bundled: the user installs it (macOS: Postgres.app, Windows: the PostgreSQL installer).
-On start the launcher checks it, creates the `ivms` database if needed and applies migrations. Closing
-the window stops everything.
+Opening the app starts every service, in order: PostgreSQL (bundled, IVMS's own server and data folder),
+database migrations, MediaMTX (video relay), the API, then the web UI in a native window. Closing the window
+or quitting stops them in reverse order. Services left running by a crash are stopped on the next start.
+Setting DATABASE_URL in ivms.env uses that PostgreSQL server instead of the bundled one.
 
 Files:
-  macOS    ~/Library/Application Support/IVMS/ivms.env   settings and generated secrets (edit DATABASE_URL here)
-           ~/Library/Logs/IVMS/                          ivms.log (API), mediamtx.log
+  macOS    ~/Library/Application Support/IVMS/ivms.env      settings and generated secrets
+           ~/Library/Application Support/IVMS/postgres/     database
+           ~/Library/Logs/IVMS/                             ivms.log (API), postgres.log, mediamtx.log
   Windows  %APPDATA%\\IVMS\\ivms.env
+           %LOCALAPPDATA%\\IVMS\\postgres\\
            %LOCALAPPDATA%\\IVMS\\Logs\\
 """
 
 import asyncio
+import atexit
+import ctypes
 import html
 import logging
 import os
 import secrets
+import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -29,22 +35,20 @@ from pathlib import Path
 APP_NAME = "IVMS"
 WINDOWS = sys.platform == "win32"
 if WINDOWS:
-    SUPPORT_DIR = Path(os.environ["APPDATA"]) / APP_NAME
-    LOG_DIR = Path(os.environ["LOCALAPPDATA"]) / APP_NAME / "Logs"
-    POSTGRES_NAME = "PostgreSQL"
-    POSTGRES_DOWNLOAD = "https://www.postgresql.org/download/windows/"
-    # The installer creates the "postgres" superuser with the password chosen during setup
-    DEFAULT_DB_USER = "postgres"
+    SUPPORT_DIR = Path(os.environ["APPDATA"]) / APP_NAME  # settings (roaming)
+    DATA_DIR = Path(os.environ["LOCALAPPDATA"]) / APP_NAME  # database (stays on this PC)
+    LOG_DIR = DATA_DIR / "Logs"
 else:
-    SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
+    SUPPORT_DIR = DATA_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
     LOG_DIR = Path.home() / "Library" / "Logs" / APP_NAME
-    POSTGRES_NAME = "Postgres.app"
-    POSTGRES_DOWNLOAD = "https://postgresapp.com/downloads.html"
-    # Postgres.app: the macOS user, no password
-    DEFAULT_DB_USER = os.environ.get("USER", "postgres")
 CONFIG = SUPPORT_DIR / "ivms.env"
+PG_DATA = DATA_DIR / "postgres"
+MEDIAMTX_PIDFILE = DATA_DIR / "mediamtx.pid"
 # Fixed so the web UI keeps its origin (and its saved sign-in) between runs
 DEFAULT_API_PORT = 8765
+# Bundled PostgreSQL: local only, on a port that does not clash with another PostgreSQL (5432)
+DEFAULT_DB_PORT = 54329
+DB_USER = "ivms"
 # MediaMTX listen addresses; any MTX_<SETTING> in ivms.env overrides its mediamtx.yml value
 MEDIAMTX_DEFAULTS = {
     "MTX_APIADDRESS": "127.0.0.1:9997",  # control API: local only
@@ -53,19 +57,23 @@ MEDIAMTX_DEFAULTS = {
     "MTX_WEBRTCADDRESS": ":8889",
 }
 
-MEDIAMTX_EXE = "mediamtx.exe" if WINDOWS else "mediamtx"
+EXE = ".exe" if WINDOWS else ""
+# Windows: the app has no console; without this every child process opens one
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if WINDOWS else 0
 
-# Bundled files: inside the app (PyInstaller), the repository in development
+# Bundled files: inside the app (PyInstaller), the repository in development (after a build script ran)
 if getattr(sys, "frozen", False):
     RESOURCES = Path(sys._MEIPASS)
     WEB_DIR, MIGRATIONS_DIR = RESOURCES / "web", RESOURCES / "migrations"
-    MEDIAMTX_BIN, MEDIAMTX_CONF = RESOURCES / "bin" / MEDIAMTX_EXE, RESOURCES / "mediamtx.yml"
+    MEDIAMTX_BIN, MEDIAMTX_CONF = RESOURCES / "bin" / f"mediamtx{EXE}", RESOURCES / "mediamtx.yml"
+    PG_BIN = RESOURCES / "postgres" / "bin"
 else:
     ROOT = Path(__file__).resolve().parents[2]
+    BUILD = ROOT / "build" / ("windows" if WINDOWS else "macos")
     sys.path.insert(0, str(ROOT / "backend"))
     WEB_DIR, MIGRATIONS_DIR = ROOT / "frontend" / "dist", ROOT / "db" / "prisma" / "migrations"
-    MEDIAMTX_BIN = ROOT / "build" / ("windows" if WINDOWS else "macos") / MEDIAMTX_EXE
-    MEDIAMTX_CONF = ROOT / "deploy" / "docker" / "mediamtx.yml"
+    MEDIAMTX_BIN, MEDIAMTX_CONF = BUILD / f"mediamtx{EXE}", ROOT / "deploy" / "docker" / "mediamtx.yml"
+    PG_BIN = BUILD / "postgres" / "bin"
 
 log = logging.getLogger("ivms.launcher")
 
@@ -81,31 +89,43 @@ class StartupError(Exception):
 # ---- settings ----
 
 
-def load_config() -> None:
-    """Reads ivms.env into the environment, creating it with fresh secrets on first run."""
+def load_config() -> bool:
+    """Reads ivms.env into the environment, creating it with fresh secrets on first run.
+    Returns True when IVMS runs its bundled PostgreSQL (no DATABASE_URL set)."""
     SUPPORT_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG.exists():
-        db_hint = (
-            "# PostgreSQL installer: user postgres, the password you chose during setup, port 5432.\n"
-            "# Put that password after the colon: postgresql://postgres:<password>@localhost:5432/ivms\n"
-            if WINDOWS
-            else "# Postgres.app default: your macOS user, no password, port 5432.\n"
-        )
         CONFIG.write_text(
             "# IVMS settings. Restart IVMS after editing.\n"
-            f"{db_hint}"
-            f"DATABASE_URL=postgresql://{DEFAULT_DB_USER}@localhost:5432/ivms\n"
             f"API_PORT={DEFAULT_API_PORT}\n"
             "ACCESS_TOKEN_TTL_SECONDS=1800\n"
+            f"# Database: IVMS starts and stops its own PostgreSQL (data in {PG_DATA}) on this local port.\n"
+            f"DB_PORT={DEFAULT_DB_PORT}\n"
+            "# To use another PostgreSQL server instead, uncomment and edit:\n"
+            "# DATABASE_URL=postgresql://user:password@host:5432/ivms\n"
             "# Generated on first run. Keep them: SECRET_KEY encrypts stored camera passwords.\n"
             f"SECRET_KEY={secrets.token_urlsafe(48)}\n"
             f"JWT_SECRET={secrets.token_urlsafe(48)}\n"
+            f"DB_PASSWORD={secrets.token_urlsafe(32)}\n"
         )
         CONFIG.chmod(0o600)
+    settings = {}
     for line in CONFIG.read_text().splitlines():
         key, sep, value = line.partition("=")
         if sep and not key.lstrip().startswith("#"):
-            os.environ.setdefault(key.strip(), value.strip())
+            settings[key.strip()] = value.strip()
+    bundled_db = "DATABASE_URL" not in settings and "DATABASE_URL" not in os.environ
+    if bundled_db and not settings.get("DB_PASSWORD"):
+        # ivms.env from an older version: add the bundled server's password
+        settings["DB_PASSWORD"] = secrets.token_urlsafe(32)
+        with CONFIG.open("a") as f:
+            f.write(f"DB_PASSWORD={settings['DB_PASSWORD']}\n")
+    for key, value in settings.items():
+        os.environ.setdefault(key, value)
+    if bundled_db:
+        os.environ.setdefault("DB_PORT", str(DEFAULT_DB_PORT))
+        os.environ["DATABASE_URL"] = (
+            f"postgresql://{DB_USER}:{os.environ['DB_PASSWORD']}@127.0.0.1:{os.environ['DB_PORT']}/ivms"
+        )
     os.environ.update(
         API_HOST="127.0.0.1",
         API_RELOAD="false",
@@ -116,6 +136,7 @@ def load_config() -> None:
         os.environ.setdefault(key, value)
     os.environ["MEDIAMTX_API_URL"] = "http://" + os.environ["MTX_APIADDRESS"]
     os.environ["MEDIAMTX_RTSP_URL"] = "rtsp://127.0.0.1:" + _port(os.environ["MTX_RTSPADDRESS"])
+    return bundled_db
 
 
 def _port(address: str) -> str:
@@ -154,8 +175,118 @@ def wait_http(url: str, timeout: float, proc: subprocess.Popen | None = None) ->
     return False
 
 
+def run_tool(*args: str | Path, timeout: float = 120) -> subprocess.CompletedProcess:
+    """Runs a bundled PostgreSQL program, output appended to postgres.log."""
+    with (LOG_DIR / "postgres.log").open("ab") as out:
+        return subprocess.run(
+            [str(a) for a in args],
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+            creationflags=NO_WINDOW,
+            check=False,  # callers look at returncode
+        )
+
+
+class BundledPostgres:
+    """IVMS's own PostgreSQL server: created on first run, started with the app and stopped with it."""
+
+    def __init__(self, port: int, password: str):
+        self.port, self.password = port, password
+        self.proc: subprocess.Popen | None = None
+
+    def start(self) -> None:
+        if WINDOWS and ctypes.windll.shell32.IsUserAnAdmin():
+            raise StartupError(
+                "IVMS is running as administrator, and its database refuses to start that way. "
+                "Close IVMS and open it normally (not with “Run as administrator”)."
+            )
+        if not (PG_DATA / "PG_VERSION").exists():
+            self._create()
+        self._stop_leftover()
+        if not port_free(self.port):
+            raise StartupError(
+                f"Port {self.port} is already in use, so the database cannot start. "
+                f"Set DB_PORT to another port in {CONFIG}, save, then try again.",
+                ("Open settings", CONFIG.as_uri()),
+            )
+        with (LOG_DIR / "postgres.log").open("ab") as out:
+            self.proc = subprocess.Popen(
+                [
+                    str(PG_BIN / f"postgres{EXE}"),
+                    *("-D", str(PG_DATA), "-p", str(self.port)),
+                    *("-c", "listen_addresses=127.0.0.1", "-c", "unix_socket_directories="),
+                ],
+                stdout=out,
+                stderr=subprocess.STDOUT,
+                creationflags=NO_WINDOW,
+            )
+        asyncio.run(self._wait_ready(60))
+
+    def _create(self) -> None:
+        """initdb into a temporary folder, so an interrupted first run leaves nothing half-made."""
+        log.info("Creating the database cluster in %s", PG_DATA)
+        tmp = PG_DATA.with_name("postgres.new")
+        shutil.rmtree(tmp, ignore_errors=True)
+        pwfile = DATA_DIR / "postgres.pw"
+        pwfile.write_text(self.password)
+        try:
+            result = run_tool(
+                PG_BIN / f"initdb{EXE}",
+                *("-D", tmp, "-U", DB_USER, f"--pwfile={pwfile}"),
+                *("--auth=scram-sha-256", "--encoding=UTF8", "--no-locale"),
+            )
+        finally:
+            pwfile.unlink(missing_ok=True)
+        if result.returncode != 0:
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise StartupError(f"Could not create the database. See {LOG_DIR / 'postgres.log'}.")
+        tmp.rename(PG_DATA)
+
+    def _stop_leftover(self) -> None:
+        # A server left running by a crashed IVMS still holds the data folder
+        if (PG_DATA / "postmaster.pid").exists() and run_tool(
+            PG_BIN / f"pg_ctl{EXE}", "status", "-D", PG_DATA
+        ).returncode == 0:
+            log.warning("Stopping a PostgreSQL left running by a previous IVMS")
+            run_tool(PG_BIN / f"pg_ctl{EXE}", "stop", "-D", PG_DATA, "-m", "fast", "-w", "-t", "30")
+
+    async def _wait_ready(self, timeout: float) -> None:
+        import asyncpg
+
+        deadline = time.monotonic() + timeout
+        while True:
+            if self.proc.poll() is not None:
+                raise StartupError(f"The database stopped while starting. See {LOG_DIR / 'postgres.log'}.")
+            try:
+                conn = await asyncpg.connect(
+                    user=DB_USER,
+                    password=self.password,
+                    host="127.0.0.1",
+                    port=self.port,
+                    database="postgres",
+                    timeout=2,
+                )
+                await conn.close()
+                return
+            except (OSError, TimeoutError, asyncpg.CannotConnectNowError):
+                if time.monotonic() > deadline:
+                    raise StartupError(f"The database did not start. See {LOG_DIR / 'postgres.log'}.") from None
+                await asyncio.sleep(0.3)
+
+    def stop(self) -> None:
+        if self.proc is None or self.proc.poll() is not None:
+            return
+        # Fast shutdown: ends sessions, writes a checkpoint, so the next start needs no recovery
+        run_tool(PG_BIN / f"pg_ctl{EXE}", "stop", "-D", PG_DATA, "-m", "fast", "-w", "-t", "30", timeout=40)
+        try:
+            self.proc.wait(10)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+
+
 async def prepare_database(dsn: str) -> None:
-    """Checks PostgreSQL, creates the database if it does not exist, applies migrations."""
+    """Creates the database if it does not exist and applies migrations."""
     import asyncpg
 
     from ivms.core.migrate import MigrationError, migrate
@@ -171,10 +302,10 @@ async def prepare_database(dsn: str) -> None:
             await admin.close()
         log.info("Created database %s", name)
     except (TimeoutError, OSError) as e:
-        start = "make sure its service is running" if WINDOWS else "open it and press “Start”"
         raise StartupError(
-            f"PostgreSQL is not running. Install {POSTGRES_NAME}, {start}, then try again.",
-            (f"Download {POSTGRES_NAME}", POSTGRES_DOWNLOAD),
+            "Cannot reach the PostgreSQL server set in DATABASE_URL. Make sure it is running, or remove "
+            "DATABASE_URL to use the database built into IVMS, then try again.",
+            ("Open settings", CONFIG.as_uri()),
         ) from e
     except (asyncpg.InvalidPasswordError, asyncpg.InvalidAuthorizationSpecificationError) as e:
         raise StartupError(
@@ -193,20 +324,28 @@ async def prepare_database(dsn: str) -> None:
 
 
 class Services:
-    def __init__(self):
+    """Starts PostgreSQL -> migrations -> MediaMTX -> API; stop() undoes it in reverse order."""
+
+    def __init__(self, bundled_db: bool):
+        self.postgres = BundledPostgres(int(os.environ["DB_PORT"]), os.environ["DB_PASSWORD"]) if bundled_db else None
         self.mediamtx: subprocess.Popen | None = None
         self.server = None  # uvicorn.Server
+        self.api_thread: threading.Thread | None = None
         self.url = ""
+        self._lock = threading.Lock()
 
     def start(self) -> None:
         from ivms.core.config import get_settings
 
         settings = get_settings()
+        if self.postgres is not None:
+            self.postgres.start()
         asyncio.run(prepare_database(settings.database_url))
         self._start_mediamtx()
         self._start_api(settings.api_port)
 
     def _start_mediamtx(self) -> None:
+        stop_leftover_mediamtx()
         for key in MEDIAMTX_DEFAULTS:
             port = int(_port(os.environ[key]))
             if not port_free(port):
@@ -215,15 +354,16 @@ class Services:
                     "Quit the program using it (for example a MediaMTX started with Docker) and try again, "
                     f"or set {key}=:<other port> in {CONFIG}."
                 )
-        out = (LOG_DIR / "mediamtx.log").open("ab")
-        self.mediamtx = subprocess.Popen(
-            [str(MEDIAMTX_BIN), str(MEDIAMTX_CONF)],
-            env=os.environ,
-            stdout=out,
-            stderr=subprocess.STDOUT,
-            # The app has no console; without this Windows opens one for MediaMTX
-            creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS else 0,
-        )
+        with (LOG_DIR / "mediamtx.log").open("ab") as out:
+            self.mediamtx = subprocess.Popen(
+                [str(MEDIAMTX_BIN), str(MEDIAMTX_CONF)],
+                cwd=DATA_DIR,  # where it writes generated files (e.g. auto.key / auto.crt)
+                env=os.environ,
+                stdout=out,
+                stderr=subprocess.STDOUT,
+                creationflags=NO_WINDOW,
+            )
+        MEDIAMTX_PIDFILE.write_text(str(self.mediamtx.pid))
         if not wait_http(os.environ["MEDIAMTX_API_URL"] + "/v3/paths/list", 15, self.mediamtx):
             raise StartupError(f"The video relay (MediaMTX) did not start. See {LOG_DIR / 'mediamtx.log'}.")
 
@@ -238,20 +378,47 @@ class Services:
             )
         config = uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_config=None, access_log=False)
         self.server = uvicorn.Server(config)
-        threading.Thread(target=self.server.run, name="api", daemon=True).start()
+        self.api_thread = threading.Thread(target=self.server.run, name="api", daemon=True)
+        self.api_thread.start()
         self.url = f"http://127.0.0.1:{port}/"
         if not wait_http(self.url + "api/v1/system/health", 20):
             raise StartupError(f"The IVMS server did not start. See {LOG_DIR / 'ivms.log'}.")
 
     def stop(self) -> None:
-        if self.server is not None:
-            self.server.should_exit = True
-        if self.mediamtx is not None and self.mediamtx.poll() is None:
-            self.mediamtx.terminate()
-            try:
-                self.mediamtx.wait(5)
-            except subprocess.TimeoutExpired:
-                self.mediamtx.kill()
+        """Safe to call more than once and from any thread (window closed, app exit, retry)."""
+        with self._lock:
+            if self.server is not None:
+                self.server.should_exit = True  # closes its database pool on the way out
+                if self.api_thread is not None:
+                    self.api_thread.join(10)
+                self.server = None
+            if self.mediamtx is not None:
+                if self.mediamtx.poll() is None:
+                    self.mediamtx.terminate()
+                    try:
+                        self.mediamtx.wait(5)
+                    except subprocess.TimeoutExpired:
+                        self.mediamtx.kill()
+                MEDIAMTX_PIDFILE.unlink(missing_ok=True)
+                self.mediamtx = None
+            if self.postgres is not None:
+                self.postgres.stop()
+
+
+def stop_leftover_mediamtx() -> None:
+    """Stops a MediaMTX left running by a crashed IVMS (it would hold the video ports)."""
+    import psutil
+
+    try:
+        pid = int(MEDIAMTX_PIDFILE.read_text())
+        proc = psutil.Process(pid)
+        if Path(proc.exe()).resolve() == MEDIAMTX_BIN.resolve():
+            log.warning("Stopping a MediaMTX left running by a previous IVMS (pid %s)", pid)
+            proc.terminate()
+            proc.wait(5)
+    except (OSError, ValueError, psutil.Error):
+        pass
+    MEDIAMTX_PIDFILE.unlink(missing_ok=True)
 
 
 # ---- window ----
@@ -267,7 +434,7 @@ button{{height:34px;padding:0 16px;border:0;border-radius:6px;font:inherit;font-
 
 
 def starting_page() -> str:
-    return PAGE.format(body="<h1>Starting IVMS…</h1><p>Checking the database and starting the video relay.</p>")
+    return PAGE.format(body="<h1>Starting IVMS…</h1><p>Starting the database and the video relay.</p>")
 
 
 def error_page(err: StartupError) -> str:
@@ -303,13 +470,14 @@ class Bridge:
 
 
 class Launcher:
-    def __init__(self):
-        self.services = Services()
+    def __init__(self, bundled_db: bool):
+        self.bundled_db = bundled_db
+        self.services = Services(bundled_db)
         self.window = None
 
     def boot(self) -> None:
         self.services.stop()
-        self.services = Services()
+        self.services = Services(self.bundled_db)
         self.window.load_html(starting_page())
         try:
             self.services.start()
@@ -338,16 +506,49 @@ class Launcher:
     def services_stop(self) -> None:
         self.services.stop()
 
+    def quit(self, sig: signal.Signals) -> None:
+        log.info("%s received, quitting", sig.name)
+        self.services.stop()
+        if self.window is not None:
+            self.window.destroy()  # webview.start() returns, then main() exits
+
+
+def watch_signals(on_signal) -> None:
+    """Calls on_signal on SIGTERM / SIGINT / SIGHUP (logout, shutdown, kill, Ctrl+C).
+
+    The window's event loop owns the main thread, so Python-level handlers would only run after it returns.
+    Python's C-level handler still writes the signal number to the wakeup fd right away: a thread waits on it.
+    (Blocking the signals instead would be inherited by PostgreSQL and MediaMTX, which then could not be stopped.)
+    """
+    reader, writer = socket.socketpair()
+    writer.setblocking(False)
+    signal.set_wakeup_fd(writer.fileno())
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, lambda *_: None)
+
+    def wait() -> None:
+        data = reader.recv(1)
+        on_signal(signal.Signals(data[0]))
+        writer.close()
+
+    threading.Thread(target=wait, name="signals", daemon=True).start()
+
 
 def main() -> None:
-    load_config()
+    bundled_db = load_config()
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     setup_logging()
-    log.info("IVMS starting (resources: %s)", WEB_DIR.parent)
-    launcher = Launcher()
+    log.info("IVMS starting (resources: %s, bundled database: %s)", WEB_DIR.parent, bundled_db)
+    launcher = Launcher(bundled_db)
+    # Quit cleanly when asked by the system instead of the window (Windows closes the window itself)
+    if not WINDOWS:
+        watch_signals(launcher.quit)
+    atexit.register(lambda: launcher.services.stop())
     try:
         launcher.run()
     finally:
         launcher.services.stop()
+    log.info("IVMS stopped")
 
 
 if __name__ == "__main__":

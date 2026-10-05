@@ -1,5 +1,6 @@
 # PyInstaller spec for IVMS.exe (Windows, one folder). Run through scripts/build_windows.ps1, which first builds
-# the frontend and downloads MediaMTX into build/windows/. installer.iss then packs the folder into a setup .exe.
+# the frontend and downloads MediaMTX and PostgreSQL into build/windows/. installer.iss then packs the folder
+# into a setup .exe.
 import tomllib
 from pathlib import Path
 
@@ -16,6 +17,7 @@ a = Analysis(
         (str(ROOT / "frontend" / "dist"), "web"),
         (str(ROOT / "db" / "prisma" / "migrations"), "migrations"),
         (str(ROOT / "deploy" / "docker" / "mediamtx.yml"), "."),
+        (str(BUILD / "postgres"), "postgres"),  # bundled server, from packaging/desktop/prepare_postgres.py
         *copy_metadata("ivms"),  # /system/health reports the version
     ],
     binaries=[(str(BUILD / "mediamtx.exe"), "bin")],
