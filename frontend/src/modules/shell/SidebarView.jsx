@@ -30,7 +30,7 @@ export default function SidebarView({
         overflow: 'hidden',
       }}
     >
-      <div style={{ height: 44, flex: 'none' }} />
+      <div style={{ height: 16, flex: 'none' }} />
       <div
         style={{ height: 40, flex: 'none', display: 'flex', alignItems: 'center', marginBottom: 12, padding: '0 10px' }}
       >
