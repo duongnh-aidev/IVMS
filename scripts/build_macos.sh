@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds IVMS.app and IVMS-<version>-<arch>.dmg for macOS (the arch of this Mac: arm64 or x86_64).
-# PostgreSQL is not bundled: users install Postgres.app (https://postgresapp.com).
+# Bundles PostgreSQL, MediaMTX and the web UI: the app starts and stops them itself.
 #
 #   scripts/build_macos.sh                                   unsigned (ad-hoc) build, for testing
 #   scripts/build_macos.sh --sign "Developer ID Application: Name (TEAMID)"
@@ -48,6 +48,10 @@ fi
 echo "${!sha_var}  $tarball" | shasum -a 256 -c - >/dev/null || { echo "MediaMTX checksum mismatch" >&2; rm -f "$tarball"; exit 1; }
 tar -xzf "$tarball" -C "$build" mediamtx
 
+echo "==> PostgreSQL"
+uv run --no-project python packaging/desktop/prepare_postgres.py \
+  "$([[ "$arch" == arm64 ]] && echo darwin-arm64v8 || echo darwin-amd64)" "$build/postgres"
+
 echo "==> Icon"
 iconset="$build/IVMS.iconset"
 rm -rf "$iconset" && mkdir -p "$iconset"
@@ -83,12 +87,11 @@ ln -s /Applications "$staging/Applications"
 cat >"$staging/Read me first.txt" <<TXT
 IVMS $version for macOS ($arch)
 
-1. Install PostgreSQL: download Postgres.app from https://postgresapp.com, move it to Applications,
-   open it and press "Initialize" (or "Start").
-2. Drag IVMS to Applications and open it.
-3. The first time, create the admin account.
+1. Drag IVMS to Applications and open it. Everything IVMS needs (database, video relay) is included
+   and starts with the app; quitting IVMS stops it.
+2. The first time, create the admin account.
 
-Settings: ~/Library/Application Support/IVMS/ivms.env   Logs: ~/Library/Logs/IVMS/
+Settings and data: ~/Library/Application Support/IVMS/   Logs: ~/Library/Logs/IVMS/
 TXT
 hdiutil create -volname "IVMS $version" -srcfolder "$staging" -fs HFS+ -format UDZO -ov "$dmg" >/dev/null
 [[ -z "$identity" ]] || codesign --force --timestamp --sign "$identity" "$dmg"

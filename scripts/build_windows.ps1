@@ -1,5 +1,5 @@
 # Builds IVMS for Windows x64: dist/windows/IVMS/ (app folder) and dist/windows/IVMS-<version>-x64-setup.exe.
-# PostgreSQL is not bundled: users install it from https://www.postgresql.org/download/windows/
+# Bundles PostgreSQL, MediaMTX and the web UI: the app starts and stops them itself.
 #
 #   pwsh scripts/build_windows.ps1
 #
@@ -34,6 +34,9 @@ if ((Get-FileHash -Algorithm SHA256 $zip).Hash -ne $MediaMtxSha256) {
 }
 Expand-Archive -Force $zip "$build/mediamtx"
 Copy-Item -Force "$build/mediamtx/mediamtx.exe" "$build/mediamtx.exe"
+
+Write-Host '==> PostgreSQL'
+uv run --no-project python packaging/desktop/prepare_postgres.py windows-amd64 "$build/postgres"
 
 Write-Host '==> App folder'
 uv sync --group desktop

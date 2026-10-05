@@ -1,6 +1,6 @@
 ; Inno Setup script: packs dist/windows/IVMS (PyInstaller output) into IVMS-<version>-x64-setup.exe.
 ; Run through scripts/build_windows.ps1, which passes /DAppVersion=<version>.
-; PostgreSQL is not bundled: users install it from https://www.postgresql.org/download/windows/
+; PostgreSQL and MediaMTX are bundled; IVMS.exe starts and stops them.
 
 #ifndef AppVersion
   #error Pass /DAppVersion=<version>
@@ -44,6 +44,8 @@ Name: "{autoprograms}\IVMS"; Filename: "{app}\IVMS.exe"
 Name: "{autodesktop}\IVMS"; Filename: "{app}\IVMS.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\IVMS.exe"; Description: "{cm:LaunchProgram,IVMS}"; Flags: nowait postinstall skipifsilent
+; As the signed-in user, not the elevated installer: the bundled PostgreSQL refuses to run as administrator
+Filename: "{app}\IVMS.exe"; Description: "{cm:LaunchProgram,IVMS}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
-; Settings (%APPDATA%\IVMS) and the database are kept on uninstall, so a reinstall keeps cameras and users.
+; Settings (%APPDATA%\IVMS) and the database (%LOCALAPPDATA%\IVMS) are kept on uninstall, so a reinstall
+; keeps cameras and users.

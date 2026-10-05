@@ -10,8 +10,8 @@ IVMS runs on Linux, macOS and Windows. Pick the guide for your machine:
 
 **Desktop app** or **Docker**?
 
-- **Desktop app**: a normal app with its own window. Good for one PC that watches the cameras. You install PostgreSQL
-  yourself (one installer), and IVMS runs while the app is open.
+- **Desktop app**: a normal app with its own window. Good for one PC that watches the cameras. Everything is
+  included (database, video relay): it starts when you open IVMS and stops when you close it.
 - **Docker**: runs as a background service that starts with the machine, and other computers on the network
   open it in a browser. Good for a server or a recorder box that is always on. PostgreSQL is included.
 
