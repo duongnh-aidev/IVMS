@@ -18,6 +18,7 @@ export class LoginController extends Controller {
     this.showServer = showServer;
     this.state = {
       edition: 'Community',
+      version: '', // unknown until the server answers
       server: '192.168.1.10',
       port: '8000',
       user: '',
@@ -37,9 +38,9 @@ export class LoginController extends Controller {
       (setup) => this.setState({ setup }),
       () => {}, // server unreachable: stay on sign-in, submitting shows the error
     );
-    this.model.edition().then(
-      (edition) => this.setState({ edition }),
-      () => {}, // keep Community
+    this.model.serverInfo().then(
+      ({ version, edition }) => this.setState({ version, edition }),
+      () => {}, // keep Community, no version
     );
   }
 
@@ -68,7 +69,8 @@ export class LoginController extends Controller {
   };
 
   present() {
-    const { server, port, user, pass, show, remember, loading, error, missing, done, setup, edition } = this.state;
+    const { server, port, user, pass, show, remember, loading, error, missing, done, setup, edition, version } =
+      this.state;
     const field = (key) => withValue((v) => this.setField(key, v));
     return {
       showServer: this.showServer,
@@ -96,6 +98,7 @@ export class LoginController extends Controller {
       subtitle: setup ? 'First run: this account manages IVMS' : 'Video Management System',
       passPlaceholder: setup ? `At least ${MIN_ADMIN_PASSWORD} characters` : 'Password',
       submitLabel: loading ? 'Connecting…' : done ? 'Signed in' : setup ? 'Create account' : 'Sign In',
+      versionLabel: version ? `Version ${version}` : '',
       editionLabel: `${edition} Edition`,
       editionColor: edition === 'Community' ? '#5C5E62' : '#3E6AE1',
     };

@@ -62,4 +62,18 @@ describe('SettingsController with plugin sections', () => {
     expect(vm().SetPanel).toBeNull();
     expect(vm().setSecs[0].weight).toBe(600); // General is selected
   });
+
+  it("About shows the server's version and edition", async () => {
+    const { controller, vm, api, systemInfo } = await setup([]);
+    controller.showSection('about');
+    const row = (label) => vm().setRows.find((r) => r.label === label).value;
+    expect(row('Version')).toBe('1 · Community Edition');
+    expect(row('License')).toBe('Open source (GNU AGPL-3.0)');
+
+    api.info = { version: '1.1.0', edition: 'Enterprise', features: ['acme.faces'] };
+    await systemInfo.load();
+
+    expect(row('Version')).toBe('1.1.0 · Enterprise Edition');
+    expect(row('License')).toBe('Commercial');
+  });
 });

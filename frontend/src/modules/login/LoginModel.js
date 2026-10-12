@@ -5,10 +5,10 @@ export class LoginModel {
     this.systemInfo = systemInfo;
   }
 
-  /** Resolves to the server's edition name (public GET /system/info). */
-  async edition() {
+  /** Resolves to the server's { version, edition } (public GET /system/info). */
+  async serverInfo() {
     await this.systemInfo.load();
-    return this.systemInfo.edition();
+    return { version: this.systemInfo.version(), edition: this.systemInfo.edition() };
   }
 
   /** Field names that are required and empty. */

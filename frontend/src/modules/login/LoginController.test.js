@@ -61,10 +61,20 @@ describe('LoginController', () => {
     expect(appNavigator.toApp).toHaveBeenCalled();
   });
 
-  it('shows the Community edition until the server says otherwise', async () => {
+  it('shows the Community edition and no version until the server answers', async () => {
     const { vm } = setup();
     expect(vm().editionLabel).toBe('Community Edition');
     expect(vm().editionColor).toBe('#5C5E62');
+    expect(vm().versionLabel).toBe('');
+  });
+
+  it("shows the server's version", async () => {
+    const api = new FakeApi({ info: { version: '1.1.0', edition: 'Community', features: [] } });
+    const { controller, vm } = setup(undefined, { api });
+
+    controller.attach();
+
+    await vi.waitFor(() => expect(vm().versionLabel).toBe('Version 1.1.0'));
   });
 
   it("shows the server's edition, e.g. a licensed Enterprise", async () => {

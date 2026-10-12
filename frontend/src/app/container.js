@@ -51,10 +51,8 @@ export function createSession({ appNavigator, api, auth, initialScreen = 'live',
     auth,
   };
   services.devices.load().catch((err) => services.toast.error(err.message));
-  // Without plugins there is nothing to switch on, so the core never needs it
-  if (plugins.screens.length || Object.values(plugins.slots).some((items) => items.length)) {
-    services.systemInfo.load().catch((err) => services.toast.error(err.message));
-  }
+  // Version and edition (Settings › About) and which plugin items to show
+  services.systemInfo.load().catch((err) => services.toast.error(err.message));
 
   const shell = buildShell({ ...services, initialScreen, pluginScreens: plugins.screens });
   const deviceEditor = buildDeviceEditor(services);

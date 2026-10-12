@@ -102,8 +102,11 @@ export class SettingsController extends Controller {
         button('Connection', 'Reconnect if video stops updating.', 'Reconnect', () => this.run(() => i.reconnect())),
       ],
       about: [
-        value('Version', about.version),
-        value('License', about.license),
+        value('Version', `${this.systemInfo?.version() || '…'} · ${this.systemInfo?.edition() ?? 'Community'} Edition`),
+        value(
+          'License',
+          (this.systemInfo?.edition() ?? 'Community') !== 'Community' ? 'Commercial' : 'Open source (GNU AGPL-3.0)',
+        ),
         toggle('autoUpd', 'Automatic updates', 'Download and install updates when available.'),
         button('Updates', `IVMS ${about.update} is available.`, 'Install update', () =>
           this.run(() => i.installUpdate()),
