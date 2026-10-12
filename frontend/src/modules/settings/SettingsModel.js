@@ -38,7 +38,8 @@ export class SettingsModel extends Observable {
   }
 
   about() {
-    return { version: '1.0.0 · Standard Edition', license: 'Valid until Dec 31, 2027 · 16 channels', update: '1.0.1' };
+    // Version and edition come from the server (SettingsController)
+    return { update: '1.0.1' };
   }
 
   // Actions below are simulated; each returns the message to show.

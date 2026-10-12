@@ -20,6 +20,10 @@ export class SystemInfoService extends Observable {
     this.emit();
   }
 
+  version() {
+    return this.#info.version;
+  }
+
   edition() {
     return this.#info.edition;
   }

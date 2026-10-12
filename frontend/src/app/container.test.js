@@ -8,12 +8,12 @@ const appNavigator = { toLogin() {}, toApp() {} };
 const auth = { signOut() {}, subscribe: () => () => {} };
 
 describe('createSession', () => {
-  it('without plugins never asks the server for plugin features', () => {
+  it('asks the server for its version and edition, even without plugins', () => {
     const api = new FakeApi();
 
     createSession({ appNavigator, api, auth });
 
-    expect(api.calls.some(([, path]) => path === '/system/info')).toBe(false);
+    expect(api.calls.some(([, path]) => path === '/system/info')).toBe(true);
   });
 
   it("builds plugin screens and settings sections with the session's services", () => {
