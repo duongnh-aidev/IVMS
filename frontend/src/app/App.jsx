@@ -9,7 +9,7 @@ export default function App({ appNavigator, api, auth, sessionOptions }) {
     () =>
       route === 'app'
         ? createSession({ appNavigator, api, auth, ...sessionOptions })
-        : createLogin({ appNavigator, auth }),
+        : createLogin({ appNavigator, api, auth }),
     [route, appNavigator, api, auth, sessionOptions],
   );
   return <Screen />;

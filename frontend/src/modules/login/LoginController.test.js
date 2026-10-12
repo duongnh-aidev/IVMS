@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../shared/api/client';
+import { SystemInfoService } from '../../shared/services/systemInfoService';
+import { FakeApi } from '../../test/fakeApi';
 import { LoginModel } from './LoginModel';
 import { LoginController } from './LoginController';
 
 const submit = (controller) => controller.getViewModel().submit({ preventDefault() {} });
 
-function setup(signIn = vi.fn().mockResolvedValue(undefined), { setupRequired = false } = {}) {
+function setup(signIn = vi.fn().mockResolvedValue(undefined), { setupRequired = false, api = new FakeApi() } = {}) {
   const auth = { signIn, setupRequired: vi.fn().mockResolvedValue(setupRequired), setup: vi.fn().mockResolvedValue() };
   const appNavigator = { toApp: vi.fn() };
-  const controller = new LoginController({ model: new LoginModel({ auth }), appNavigator, showServer: false });
+  const model = new LoginModel({ auth, systemInfo: new SystemInfoService({ api }) });
+  const controller = new LoginController({ model, appNavigator, showServer: false });
   return { auth, appNavigator, controller, vm: () => controller.getViewModel() };
 }
 
@@ -56,5 +59,30 @@ describe('LoginController', () => {
     expect(auth.setup).toHaveBeenCalledWith('owner', 'long-enough', true);
     expect(auth.signIn).not.toHaveBeenCalled();
     expect(appNavigator.toApp).toHaveBeenCalled();
+  });
+
+  it('shows the Community edition until the server says otherwise', async () => {
+    const { vm } = setup();
+    expect(vm().editionLabel).toBe('Community Edition');
+    expect(vm().editionColor).toBe('#5C5E62');
+  });
+
+  it("shows the server's edition, e.g. a licensed Enterprise", async () => {
+    const api = new FakeApi({ info: { version: '1', edition: 'Enterprise', features: ['ee.ai'] } });
+    const { controller, vm } = setup(undefined, { api });
+
+    controller.attach();
+    await vi.waitFor(() => expect(vm().editionLabel).toBe('Enterprise Edition'));
+    expect(vm().editionColor).toBe('#3E6AE1');
+  });
+
+  it('keeps Community when the server is unreachable', async () => {
+    const api = { get: vi.fn().mockRejectedValue(new ApiError(0, { detail: 'Cannot reach the IVMS server.' })) };
+    const { controller, vm } = setup(undefined, { api });
+
+    controller.attach();
+    await Promise.resolve();
+
+    expect(vm().editionLabel).toBe('Community Edition');
   });
 });

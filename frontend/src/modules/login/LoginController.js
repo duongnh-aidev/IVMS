@@ -7,16 +7,17 @@ const MIN_ADMIN_PASSWORD = 8;
 
 /**
  * Sign-in form. On a fresh install (no user yet) it creates the admin account instead.
- * `showServer` shows the server/port fields; `edition` is 'Standard' | 'Pro'.
+ * `showServer` shows the server/port fields. The edition comes from the server (GET /system/info):
+ * Community, or the edition of a plugin with features enabled (e.g. a licensed Enterprise).
  */
 export class LoginController extends Controller {
-  constructor({ model, appNavigator, showServer = true, edition = 'Standard' }) {
+  constructor({ model, appNavigator, showServer = true }) {
     super();
     this.model = model;
     this.appNavigator = appNavigator;
     this.showServer = showServer;
-    this.edition = edition;
     this.state = {
+      edition: 'Community',
       server: '192.168.1.10',
       port: '8000',
       user: '',
@@ -35,6 +36,10 @@ export class LoginController extends Controller {
     this.model.setupRequired().then(
       (setup) => this.setState({ setup }),
       () => {}, // server unreachable: stay on sign-in, submitting shows the error
+    );
+    this.model.edition().then(
+      (edition) => this.setState({ edition }),
+      () => {}, // keep Community
     );
   }
 
@@ -63,9 +68,8 @@ export class LoginController extends Controller {
   };
 
   present() {
-    const { server, port, user, pass, show, remember, loading, error, missing, done, setup } = this.state;
+    const { server, port, user, pass, show, remember, loading, error, missing, done, setup, edition } = this.state;
     const field = (key) => withValue((v) => this.setField(key, v));
-    const pro = this.edition === 'Pro';
     return {
       showServer: this.showServer,
       server,
@@ -92,8 +96,8 @@ export class LoginController extends Controller {
       subtitle: setup ? 'First run: this account manages IVMS' : 'Video Management System',
       passPlaceholder: setup ? `At least ${MIN_ADMIN_PASSWORD} characters` : 'Password',
       submitLabel: loading ? 'Connecting…' : done ? 'Signed in' : setup ? 'Create account' : 'Sign In',
-      editionLabel: pro ? 'Pro Edition' : 'Standard Edition',
-      editionColor: pro ? '#3E6AE1' : '#5C5E62',
+      editionLabel: `${edition} Edition`,
+      editionColor: edition === 'Community' ? '#5C5E62' : '#3E6AE1',
     };
   }
 }
