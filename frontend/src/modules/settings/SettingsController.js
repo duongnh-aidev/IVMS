@@ -1,4 +1,5 @@
 import { Controller } from '../../core/mvc';
+import { isAvailable } from '../../core/plugins';
 import { darkOption } from '../../shared/ui/options';
 
 const SECTIONS = {
@@ -9,15 +10,21 @@ const SECTIONS = {
   about: 'About',
 };
 
-/** Settings window: section list + rows (toggle / segmented / value / button). Public input: `showSection(key)`. */
+/**
+ * Settings window: section list + rows (toggle / segmented / value / button). Public input: `showSection(key)`.
+ * Plugin sections ({ key, label, requires, View }, slot "settings.sections") follow the core ones while their
+ * feature is enabled; the plugin's View fills the section.
+ */
 export class SettingsController extends Controller {
-  constructor({ model, auth, toast }) {
+  constructor({ model, auth, toast, pluginSections = [], systemInfo }) {
     super();
     this.model = model;
     this.auth = auth;
     this.toast = toast;
+    this.pluginSections = pluginSections;
+    this.systemInfo = systemInfo;
     this.state = { section: 'general' };
-    this.observe(model);
+    this.observe(model, ...(systemInfo ? [systemInfo] : []));
   }
 
   showSection = (section) => this.setState({ section });
@@ -109,16 +116,22 @@ export class SettingsController extends Controller {
   }
 
   present() {
-    const { section } = this.state;
+    const features = this.systemInfo?.features() ?? new Set();
+    const plugin = this.pluginSections.filter((s) => isAvailable(s, features));
+    const sections = { ...SECTIONS, ...Object.fromEntries(plugin.map((s) => [s.key, s.label])) };
+    // A plugin section whose feature was turned off falls back to General
+    const section = sections[this.state.section] ? this.state.section : 'general';
+    const panel = plugin.find((s) => s.key === section);
     return {
-      setSecs: Object.entries(SECTIONS).map(([k, label]) => ({
+      setSecs: Object.entries(sections).map(([k, label]) => ({
         label,
         bg: section === k ? '#FFFFFF' : 'transparent',
         shadow: section === k ? '0 1px 2px rgba(0,0,0,.08)' : 'none',
         weight: section === k ? 600 : 400,
         onClick: () => this.showSection(k),
       })),
-      setRows: this.rows(section),
+      setRows: panel ? [] : this.rows(section),
+      SetPanel: panel?.View ?? null,
     };
   }
 }

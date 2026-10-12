@@ -5,7 +5,8 @@ new routes, permissions, features, database tables in their own schema and event
 change or replace what the core (or another plugin) provides, so the core UI and API look the same with or
 without them. The core refuses to start (or migrate) when a plugin breaks that rule.
 
-The backend contract, plugin migrations and events below are implemented. Frontend plugins come next.
+The backend contract, plugin migrations, events and frontend screens/settings sections below are implemented.
+More frontend slots (playback timeline, dashboard) come with the event features.
 
 ## Publishing a plugin
 
@@ -108,6 +109,54 @@ handler is an `async def handler(event)`; `event.name` is the event, `event.data
   slow work.
 - The list lives in `ivms.core.events.EVENTS`. New events are added there; removing or renaming one is a
   breaking change (`PLUGIN_API_VERSION` goes up).
+
+## Frontend
+
+A plugin's UI is bundled into the web app at **build time**: there is one bundle and one React, and the
+core build contains no plugin code. Point `IVMS_FRONTEND_PLUGINS` at the plugin entry files
+(comma-separated) when building or running the frontend:
+
+```bash
+IVMS_FRONTEND_PLUGINS=../acme-ivms/frontend/index.js npm run build   # or npm run dev
+```
+
+The entry's default export says what the plugin adds:
+
+```js
+// acme-ivms/frontend/index.js
+import { buildDetections } from './detections';
+import { buildLicence } from './licence';
+
+export default {
+  name: 'acme',
+  screens: {
+    // build(services) returns a React component, like the core modules' `View`
+    detections: {
+      label: 'Detections',
+      icon: 'M3 3h18v18H3z', // 24×24 stroked SVG path, like frontend/src/shared/ui/icons.js
+      group: 'main', // main | setup | bottom: appended after the core items of that sidebar group
+      requires: 'acme.detections', // shown only while GET /system/info lists this feature
+      build: (services) => buildDetections(services).View,
+    },
+  },
+  slots: {
+    // No `requires`: shown whenever the plugin is installed (e.g. to enter a licence)
+    'settings.sections': [{ key: 'licence', label: 'Licence', build: (services) => buildLicence(services).View }],
+  },
+};
+```
+
+- `services` are the session's shared services (`api`, `devices`, `systemInfo`, `toast`, `auth`, ...);
+  screens also get `shell` (`shell.show(key)` switches screens). The plugin's views fill the space the
+  core gives them; they never change core screens.
+- Slots: `settings.sections` (a section after the core ones; its view replaces the rows on the right).
+- A screen or slot key the core or another plugin already uses, an unknown slot or an unknown sidebar group
+  throws at startup.
+- Without enabled features the sidebar and settings look exactly like the core. After a licence change,
+  call `services.systemInfo.load()`: plugin items appear or disappear at once. If the open screen or section
+  is turned off, the app switches to Live View or General.
+- Plugin files live outside `frontend/`. They resolve `react` to the core's copy; import core helpers with
+  the `@/` alias (`import { Controller } from '@/core/mvc'`).
 
 ## Lifespan
 

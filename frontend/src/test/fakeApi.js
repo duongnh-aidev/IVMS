@@ -8,7 +8,13 @@ import { DEVICES, GROUPS } from './fixtures';
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
 export class FakeApi {
-  constructor({ devices = DEVICES, groups = GROUPS, probe = { reachable: true, codec: 'H.264', error: null } } = {}) {
+  constructor({
+    devices = DEVICES,
+    groups = GROUPS,
+    probe = { reachable: true, codec: 'H.264', error: null },
+    info = { version: '1.0.0', edition: 'Community', features: [] },
+  } = {}) {
+    this.info = info; // GET /system/info: change it to simulate a licence change
     this.devices = clone(devices);
     this.groups = clone(groups);
     this.probeResult = probe;
@@ -27,6 +33,7 @@ export class FakeApi {
     const params = new URLSearchParams(query);
     const deviceId = route.match(/^\/devices\/([^/]+)$/)?.[1];
 
+    if (method === 'GET' && route === '/system/info') return clone(this.info);
     if (method === 'GET' && route === '/device-groups') {
       return this.groups.map((g) => ({ ...g, deviceCount: this.devices.filter((d) => d.groupId === g.id).length }));
     }
