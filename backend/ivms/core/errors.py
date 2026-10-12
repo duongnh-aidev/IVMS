@@ -32,6 +32,13 @@ class Unauthorized(AppError):
     title = "Unauthorized"
 
 
+class Forbidden(AppError):
+    """Signed in, but not allowed to do this (missing permission, feature not enabled)."""
+
+    status = 403
+    title = "Forbidden"
+
+
 class Conflict(AppError):
     status = 409
     title = "Conflict"
