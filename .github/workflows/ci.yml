@@ -54,6 +54,45 @@ jobs:
       - name: Check dependency compatibility
         run: uv pip check
 
+  # Keeps the core free of copyleft dependencies so it can also ship inside the commercial edition.
+  # Only checks what ships to users: Python runtime deps and frontend production deps (Prisma is a dev tool).
+  # The desktop group (pywebview, psutil, PyInstaller bootloader) is macOS/Windows-only and reviewed by hand.
+  licenses:
+    name: Dependency licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .python-version
+          enable-cache: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install runtime dependencies
+        run: uv sync --no-dev
+
+      - name: Check Python licenses
+        run: >-
+          uvx pip-licenses@5.5.0 --python .venv/bin/python --from=mixed --partial-match
+          --ignore-packages ivms
+          --allow-only "MIT;BSD;Apache;ISC;PSF;Python Software Foundation;MPL-2.0;Mozilla Public License 2.0"
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Check frontend licenses
+        working-directory: frontend
+        run: >-
+          npx --yes license-checker-rseidelsohn@4.4.2 --production --excludePrivatePackages --summary
+          --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD"
+
   unit-test:
     name: Unit tests
     needs: backend-deps
