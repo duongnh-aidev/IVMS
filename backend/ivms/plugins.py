@@ -6,7 +6,7 @@ A plugin is a `Plugin` object published under the `ivms.plugins` entry point gro
     [project.entry-points."ivms.plugins"]
     acme = "acme_ivms:plugin"
 
-Plugins only add: new routes, permissions and features. They never replace what the core (or another
+Plugins only add: new routes, permissions, features and tables in their own schema. They never replace what the core (or another
 plugin) already provides; `create_app` refuses to start when they try. `features` is called on every
 check, so a plugin can turn features on and off at runtime (e.g. when a licence is entered).
 
@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Request
@@ -44,6 +45,9 @@ class Plugin:
     routers: Sequence[APIRouter] = ()
     # New permission keys its routes declare with `require(...)`
     permissions: Sequence[str] = ()
+    # Folders of <timestamp>_<name>/migration.sql, applied after the core's. Tables go in the plugin's
+    # own schema; changing the core (`public`) schema is refused.
+    migrations: Path | None = None
     # Opened after the core resources (app.state.pool, ...) and closed before them
     lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None
     # Feature keys enabled right now; routes guard themselves with `require_feature(key)`
@@ -94,6 +98,11 @@ def discover() -> list[Plugin]:
         else:
             found.append(plugin)
     return found
+
+
+def migration_dirs(plugins: Sequence[Plugin]) -> list[tuple[str, Path]]:
+    """(name, migrations folder) of the plugins that have migrations, for `ivms.core.migrate.migrate`."""
+    return [(p.name, p.migrations) for p in plugins if p.migrations]
 
 
 def check_unique(plugins: Sequence[Plugin], core_permissions: Iterable[str]) -> None:

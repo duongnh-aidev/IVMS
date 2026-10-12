@@ -1,4 +1,4 @@
-"""`python -m ivms [serve]`: run the API server. `python -m ivms migrate`: apply database migrations."""
+"""`python -m ivms [serve]`: run the API server. `python -m ivms migrate`: apply core, then plugin, migrations."""
 
 import argparse
 import asyncio
@@ -24,10 +24,11 @@ def serve() -> None:
 def migrate() -> None:
     from ivms.core.migrate import MigrationError
     from ivms.core.migrate import migrate as run
+    from ivms.plugins import discover, migration_dirs
 
     settings = get_settings()
     try:
-        applied = asyncio.run(run(settings.database_url, settings.migrations_dir))
+        applied = asyncio.run(run(settings.database_url, settings.migrations_dir, migration_dirs(discover())))
     except MigrationError as e:
         sys.exit(f"Migration failed: {e}")
     print(f"Applied {len(applied)} migration(s): {', '.join(applied)}" if applied else "Database is up to date")

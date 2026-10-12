@@ -290,6 +290,7 @@ async def prepare_database(dsn: str) -> None:
     import asyncpg
 
     from ivms.core.migrate import MigrationError, migrate
+    from ivms.plugins import discover, migration_dirs
 
     try:
         conn = await asyncpg.connect(dsn, timeout=5)
@@ -317,7 +318,7 @@ async def prepare_database(dsn: str) -> None:
     else:
         await conn.close()
     try:
-        applied = await migrate(dsn, MIGRATIONS_DIR)
+        applied = await migrate(dsn, MIGRATIONS_DIR, migration_dirs(discover()))
     except MigrationError as e:
         raise StartupError(f"Database upgrade failed: {e}") from e
     log.info("Migrations applied: %s", applied or "none")
