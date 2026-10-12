@@ -11,6 +11,7 @@ from ivms.core.crypto import SecretBox
 from ivms.core.db import Conn
 from ivms.core.deps import require
 from ivms.core.errors import Invalid, NotFound
+from ivms.core.events import EventBus
 from ivms.core.schemas import Page
 from ivms.features.device_groups.controller import get_controller as get_group_controller
 from ivms.features.streams import MediaMTX, ProbeResult, RtspTarget, path_name, probe
@@ -41,6 +42,10 @@ class StreamRelay(Protocol):
     async def unpublish(self, path: str) -> None: ...
 
 
+class Events(Protocol):
+    async def publish(self, name: str, **data) -> None: ...
+
+
 Prober = Callable[[RtspTarget], Awaitable[ProbeResult]]
 
 
@@ -49,12 +54,21 @@ def _to_device(row: dict) -> Device:
 
 
 class DeviceController:
-    def __init__(self, model: Model, groups: GroupTree, relay: StreamRelay, prober: Prober, secrets: SecretBox):
+    def __init__(
+        self,
+        model: Model,
+        groups: GroupTree,
+        relay: StreamRelay,
+        prober: Prober,
+        secrets: SecretBox,
+        events: Events | None = None,
+    ):
         self.model = model
         self.groups = groups
         self.relay = relay
         self.prober = prober
         self.secrets = secrets
+        self.events = events or EventBus()
 
     async def list(
         self,
@@ -89,7 +103,9 @@ class DeviceController:
         async with self.model.transaction():
             device_id = await self.model.create(fields)
             await self._publish(device_id)
-        return await self.get(device_id)
+        device = await self.get(device_id)
+        await self._announce("device.created", device)
+        return device
 
     async def update(self, device_id: UUID, data: DeviceUpdate) -> Device:
         fields = {k: v for k, v in data.model_dump(include=data.model_fields_set).items() if v is not None}
@@ -103,13 +119,17 @@ class DeviceController:
                 raise NotFound("Device not found")
             if CONNECTION_FIELDS & fields.keys():
                 await self._publish(device_id)
-        return await self.get(device_id)
+        device = await self.get(device_id)
+        # Field names as the client sent them (password, not password_enc)
+        await self._announce("device.updated", device, changed=sorted(data.model_fields_set))
+        return device
 
     async def delete(self, device_id: UUID) -> None:
         async with self.model.transaction():
             if not await self.model.delete(device_id):
                 raise NotFound("Device not found")
             await self.relay.unpublish(path_name(device_id))
+        await self.events.publish("device.deleted", device_id=str(device_id), stream_path=path_name(device_id))
 
     async def probe(self, data: ProbeRequest) -> ProbeResponse:
         password = data.password
@@ -126,6 +146,10 @@ class DeviceController:
         c = await self.model.get_connection(device_id)
         target = RtspTarget(c["host"], c["port"], c["path"], c["username"], self._decrypt(c["password_enc"]))
         await self.relay.publish(path_name(device_id), target.url)
+
+    async def _announce(self, name: str, device: Device, **extra) -> None:
+        """Publishes after the transaction committed, so handlers see the change in the database."""
+        await self.events.publish(name, device=device.model_dump(mode="json"), stream_path=path_name(device.id), **extra)
 
     def _decrypt(self, token: str | None) -> str:
         return self.secrets.decrypt(token) if token else ""
@@ -144,6 +168,7 @@ def get_controller(conn: Conn, request: Request) -> DeviceController:
         relay=MediaMTX(state.mediamtx_http),
         prober=probe,
         secrets=SecretBox(state.settings.secret_key),
+        events=state.events,
     )
 
 

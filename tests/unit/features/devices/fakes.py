@@ -111,7 +111,18 @@ class FakeProber:
         return self.result
 
 
+class FakeEvents:
+    """Records published events as (name, data)."""
+
+    def __init__(self):
+        self.published: list[tuple[str, dict]] = []
+
+    async def publish(self, name, **data):
+        self.published.append((name, data))
+
+
 def make_controller(groups: FakeGroups | None = None):
+    """The published events are in `controller.events.published`."""
     model, relay, prober = FakeDeviceModel(), FakeRelay(), FakeProber()
-    controller = DeviceController(model, groups or FakeGroups(), relay, prober, SecretBox("test-secret"))
+    controller = DeviceController(model, groups or FakeGroups(), relay, prober, SecretBox("test-secret"), FakeEvents())
     return controller, model, relay, prober

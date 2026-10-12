@@ -6,7 +6,7 @@ A plugin is a `Plugin` object published under the `ivms.plugins` entry point gro
     [project.entry-points."ivms.plugins"]
     acme = "acme_ivms:plugin"
 
-Plugins only add: new routes, permissions and features. They never replace what the core (or another
+Plugins only add: new routes, permissions, features, tables in their own schema and event handlers. They never replace what the core (or another
 plugin) already provides; `create_app` refuses to start when they try. `features` is called on every
 check, so a plugin can turn features on and off at runtime (e.g. when a licence is entered).
 
@@ -15,15 +15,17 @@ when it changes in a way that breaks plugins.
 """
 
 import logging
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 
 from ivms.core.errors import Forbidden
+from ivms.core.events import EVENTS, EventBus, EventHandler
 
 PLUGIN_API_VERSION = 1
 ENTRY_POINT_GROUP = "ivms.plugins"
@@ -44,6 +46,11 @@ class Plugin:
     routers: Sequence[APIRouter] = ()
     # New permission keys its routes declare with `require(...)`
     permissions: Sequence[str] = ()
+    # Folders of <timestamp>_<name>/migration.sql, applied after the core's. Tables go in the plugin's
+    # own schema; changing the core (`public`) schema is refused.
+    migrations: Path | None = None
+    # Event name (ivms.core.events.EVENTS) -> handler, called after the core change is committed
+    on_event: Mapping[str, EventHandler] = field(default_factory=dict)
     # Opened after the core resources (app.state.pool, ...) and closed before them
     lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None
     # Feature keys enabled right now; routes guard themselves with `require_feature(key)`
@@ -96,8 +103,17 @@ def discover() -> list[Plugin]:
     return found
 
 
+def migration_dirs(plugins: Sequence[Plugin]) -> list[tuple[str, Path]]:
+    """(name, migrations folder) of the plugins that have migrations, for `ivms.core.migrate.migrate`."""
+    return [(p.name, p.migrations) for p in plugins if p.migrations]
+
+
+def event_bus(plugins: Sequence[Plugin]) -> EventBus:
+    return EventBus([(f"Plugin {p.name}", name, handler) for p in plugins for name, handler in p.on_event.items()])
+
+
 def check_unique(plugins: Sequence[Plugin], core_permissions: Iterable[str]) -> None:
-    """Raises PluginError when two plugins share a name or a permission clashes."""
+    """Raises PluginError when two plugins share a name, a permission clashes or an event is unknown."""
     names, permissions = set(), set(core_permissions)
     for plugin in plugins:
         if plugin.name in names:
@@ -107,6 +123,9 @@ def check_unique(plugins: Sequence[Plugin], core_permissions: Iterable[str]) -> 
             if key in permissions:
                 raise PluginError(f'Plugin {plugin.name} redefines permission "{key}"')
             permissions.add(key)
+        for name in plugin.on_event:
+            if name not in EVENTS:
+                raise PluginError(f'Plugin {plugin.name} handles unknown event "{name}"')
 
 
 def require_feature(feature: str):
