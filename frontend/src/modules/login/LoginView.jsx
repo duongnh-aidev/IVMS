@@ -43,6 +43,7 @@ export default function LoginView({ controller }) {
     title,
     subtitle,
     passPlaceholder,
+    versionLabel,
     editionLabel,
     editionColor,
   } = useController(controller);
@@ -254,8 +255,12 @@ export default function LoginView({ controller }) {
               color: '#8E8E8E',
             }}
           >
-            <span>Version 1.0.0</span>
-            <span>·</span>
+            {versionLabel && (
+              <>
+                <span>{versionLabel}</span>
+                <span>·</span>
+              </>
+            )}
             <span style={{ fontWeight: 500, color: editionColor }}>{editionLabel}</span>
           </div>
         </div>

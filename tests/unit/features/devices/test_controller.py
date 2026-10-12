@@ -115,3 +115,31 @@ async def test_probe_uses_stored_password_when_omitted():
 
     assert result.reachable and result.codec == "H.264"
     assert prober.calls[-1].password == "p@ss:1"
+
+
+async def test_create_update_delete_announce_events_for_plugins():
+    controller, *_ = make_controller()
+
+    device = await controller.create(LOBBY)
+    await controller.update(device.id, DeviceUpdate(name="Front door", password="new"))
+    await controller.delete(device.id)
+
+    (created, c), (updated, u), (deleted, d) = controller.events.published
+    assert (created, updated, deleted) == ("device.created", "device.updated", "device.deleted")
+    assert c["device"]["id"] == str(device.id) and c["device"]["name"] == "Lobby"
+    assert c["stream_path"] == u["stream_path"] == d["stream_path"] == path_name(device.id)
+    assert "password" not in c["device"] and "password_enc" not in c["device"]
+    assert u["device"]["name"] == "Front door" and u["changed"] == ["name", "password"]
+    assert d == {"device_id": str(device.id), "stream_path": path_name(device.id)}
+
+
+async def test_failed_changes_announce_nothing():
+    controller, _, relay, _ = make_controller()
+    relay.fail = True
+
+    with pytest.raises(UpstreamError):
+        await controller.create(LOBBY)
+    with pytest.raises(NotFound):
+        await controller.delete(uuid4())
+
+    assert controller.events.published == []

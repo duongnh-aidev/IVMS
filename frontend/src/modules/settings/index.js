@@ -3,11 +3,14 @@ import { SettingsModel } from './SettingsModel';
 import { SettingsController } from './SettingsController';
 import SettingsView from './SettingsView';
 
-export function buildSettings({ toast, auth }) {
+/** `pluginSections`: slot "settings.sections" items with their bound `View`. */
+export function buildSettings({ toast, auth, pluginSections, systemInfo }) {
   const controller = new SettingsController({
     model: new SettingsModel(),
     auth,
     toast,
+    pluginSections,
+    systemInfo,
   });
   return {
     controller,
