@@ -16,7 +16,7 @@ from ivms.core.deps import PERMISSIONS, check_permissions
 from ivms.core.errors import install_error_handlers
 from ivms.core.frontend import SinglePageApp
 from ivms.features import auth, device_groups, devices, system
-from ivms.plugins import Plugin, PluginError, Plugins, check_unique, discover
+from ivms.plugins import Plugin, PluginError, Plugins, check_unique, discover, event_bus
 
 API_PREFIX = "/api/v1"
 
@@ -53,6 +53,7 @@ def create_app(settings: Settings | None = None, plugins: Sequence[Plugin] | Non
     # Set here, not in lifespan: token checks read it, and tests run without the lifespan
     app.state.settings = settings
     app.state.plugins = Plugins(plugins)
+    app.state.events = event_bus(plugins)
     install_error_handlers(app)
 
     api = APIRouter(prefix=API_PREFIX)

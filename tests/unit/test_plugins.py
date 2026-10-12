@@ -116,14 +116,27 @@ def test_plugins_cannot_replace_each_others_routes():
         client_for(make_plugin("a", [detections_router()]), make_plugin("b", [detections_router()]))
 
 
+async def test_plugin_event_handlers_receive_core_events():
+    received = []
+
+    async def on_device_deleted(event):
+        received.append(event.data)
+
+    app = create_app(Settings(), plugins=[make_plugin(on_event={"device.deleted": on_device_deleted})])
+    await app.state.events.publish("device.deleted", device_id="1", stream_path="cam-1")
+
+    assert received == [{"device_id": "1", "stream_path": "cam-1"}]
+
+
 @pytest.mark.parametrize(
     "plugins",
     [
         [make_plugin("a"), make_plugin("a")],
         [make_plugin(permissions=["devices"])],  # core permission
         [make_plugin("a", permissions=["rules"]), make_plugin("b", permissions=["rules"])],
+        [make_plugin(on_event={"device.removed": None})],
     ],
-    ids=["same name", "core permission", "permission of another plugin"],
+    ids=["same name", "core permission", "permission of another plugin", "unknown event"],
 )
 def test_clashing_plugins_stop_the_app(plugins):
     with pytest.raises(PluginError):

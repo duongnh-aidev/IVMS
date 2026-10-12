@@ -1,11 +1,11 @@
 # Plugins
 
 A plugin is a separately installed Python package that adds features to IVMS. Plugins **only add**:
-new routes, permissions, features and database tables in their own schema. They never change or replace
-what the core (or another plugin) provides, so the core UI and API look the same with or without them.
-The core refuses to start (or migrate) when a plugin breaks that rule.
+new routes, permissions, features, database tables in their own schema and event handlers. They never
+change or replace what the core (or another plugin) provides, so the core UI and API look the same with or
+without them. The core refuses to start (or migrate) when a plugin breaks that rule.
 
-The backend contract and plugin migrations below are implemented. The event bus and frontend plugins come next.
+The backend contract, plugin migrations and events below are implemented. Frontend plugins come next.
 
 ## Publishing a plugin
 
@@ -31,6 +31,7 @@ plugin = Plugin(
     routers=[detections.router],      # mounted under /api/v1, after the core routers
     permissions=["rules"],            # new permission keys, usable with require("rules")
     migrations=Path(__file__).parent / "migrations",  # optional, see "Database" below
+    on_event={"device.deleted": detections.stop_camera},  # see "Events" below
     lifespan=detections.lifespan,     # optional async context manager, gets the FastAPI app
     features=licence.enabled,         # () -> feature keys enabled right now
     edition="Enterprise",             # shown while at least one feature is enabled
@@ -48,6 +49,7 @@ When IVMS starts, `create_app()` loads every installed plugin. A plugin that fai
 | A permission key is defined once (core keys: `docs/backend-api.md` §5) | `PluginError` |
 | A method + path is defined once. `/devices/{id}` and `/devices/{device_id}` count as the same path | `PluginError` |
 | Every `require(...)` key is a core or plugin permission | `ValueError` |
+| Every `on_event` name is an event the core publishes | `PluginError` |
 
 ## Features and editions
 
@@ -86,6 +88,27 @@ CREATE TABLE acme.detections (
 - As with core migrations, never edit one that has been applied: `migrate` refuses to run.
 - Removing a plugin leaves its schema in place; drop it by hand if the data is no longer needed.
 
+## Events
+
+The core announces changes so plugins can react, for example to start or stop analysing a camera. A
+handler is an `async def handler(event)`; `event.name` is the event, `event.data` a dict of JSON values.
+
+| Event | `data` |
+| ----- | ------ |
+| `device.created` | `device` (the device as JSON, snake_case keys, no password), `stream_path` |
+| `device.updated` | `device`, `stream_path`, `changed` (field names the request changed, e.g. `["name", "password"]`) |
+| `device.deleted` | `device_id`, `stream_path` |
+
+`stream_path` is the MediaMTX path of the camera: read it at `MEDIAMTX_RTSP_URL/<stream_path>`.
+
+- Events are published after the change is committed, so the handler sees it in the database. A change that
+  fails (relay unreachable, unknown device) publishes nothing.
+- Handlers run one after another inside the request that made the change. A handler that raises is logged
+  and does not fail the request or stop other handlers. Keep handlers short; start a background task for
+  slow work.
+- The list lives in `ivms.core.events.EVENTS`. New events are added there; removing or renaming one is a
+  breaking change (`PLUGIN_API_VERSION` goes up).
+
 ## Lifespan
 
 A plugin's `lifespan(app)` is entered after the core resources (`app.state.pool`, the MediaMTX client)
@@ -94,7 +117,7 @@ are open and exited before they close. Plugins are entered in load order and exi
 ## API plugins may use
 
 `ivms.plugins` is the stable contract (`PLUGIN_API_VERSION` goes up when it breaks). Plugins may also
-import `ivms.core.db.Conn`, `ivms.core.deps.require` / `CurrentUserId`, `ivms.core.errors` and
+import `ivms.core.events.Event`, `ivms.core.db.Conn`, `ivms.core.deps.require` / `CurrentUserId`, `ivms.core.errors` and
 `ivms.core.schemas`. Everything else is internal and can change in any release.
 
 ## Packaging
