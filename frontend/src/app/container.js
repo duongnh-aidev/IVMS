@@ -28,8 +28,8 @@ const EMPTY_REGISTRY = { screens: [], slots: { 'settings.sections': [] } };
  * Sign-in screen.
  * @param showServer  show server/port fields (the web client always talks to the server it was loaded from)
  */
-export function createLogin({ appNavigator, auth, showServer = false, edition = 'Standard' }) {
-  return buildLogin({ appNavigator, auth, showServer, edition }).View;
+export function createLogin({ appNavigator, api, auth, showServer = false }) {
+  return buildLogin({ appNavigator, api, auth, showServer }).View;
 }
 
 /**

@@ -1,7 +1,14 @@
 /** Sign-in against the IVMS server (POST /auth/login through the auth service). */
 export class LoginModel {
-  constructor({ auth }) {
+  constructor({ auth, systemInfo }) {
     this.auth = auth;
+    this.systemInfo = systemInfo;
+  }
+
+  /** Resolves to the server's edition name (public GET /system/info). */
+  async edition() {
+    await this.systemInfo.load();
+    return this.systemInfo.edition();
   }
 
   /** Field names that are required and empty. */
