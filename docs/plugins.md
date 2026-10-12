@@ -1,0 +1,75 @@
+# Plugins
+
+A plugin is a separately installed Python package that adds features to IVMS. Plugins **only add**:
+new routes, permissions and features. They never change or replace what the core (or another plugin)
+provides, so the core UI and API look the same with or without them. The core refuses to start when a
+plugin breaks that rule.
+
+The backend contract below is implemented. Database migrations, the event bus and frontend plugins come next.
+
+## Publishing a plugin
+
+Expose a `Plugin` object under the `ivms.plugins` entry point group:
+
+```toml
+# pyproject.toml of the plugin package
+[project.entry-points."ivms.plugins"]
+acme = "acme_ivms:plugin"
+```
+
+```python
+# acme_ivms/__init__.py
+from ivms.plugins import PLUGIN_API_VERSION, Plugin
+
+from . import detections, licence
+
+plugin = Plugin(
+    name="acme",
+    api_version=PLUGIN_API_VERSION,
+    routers=[detections.router],      # mounted under /api/v1, after the core routers
+    permissions=["rules"],            # new permission keys, usable with require("rules")
+    lifespan=detections.lifespan,     # optional async context manager, gets the FastAPI app
+    features=licence.enabled,         # () -> feature keys enabled right now
+    edition="Enterprise",             # shown while at least one feature is enabled
+)
+```
+
+When IVMS starts, `create_app()` loads every installed plugin. A plugin that fails to import, is not a
+`Plugin`, or targets another `api_version` is logged and skipped, and the app runs without it.
+
+## Rules (checked at startup)
+
+| Rule | On violation |
+| ---- | ------------ |
+| Plugin names are unique | `PluginError` |
+| A permission key is defined once (core keys: `docs/backend-api.md` §5) | `PluginError` |
+| A method + path is defined once. `/devices/{id}` and `/devices/{device_id}` count as the same path | `PluginError` |
+| Every `require(...)` key is a core or plugin permission | `ValueError` |
+
+## Features and editions
+
+`features` is called on every check, so a plugin can turn features on or off at runtime, for example when
+a licence key is entered. No restart is needed.
+
+- Guard a route with `require_feature("acme.detections")`. While the feature is off, the route answers
+  `403` problem+json.
+- `GET /api/v1/system/info` (public) returns `{ version, edition, features }`. The UI reads it to decide
+  which plugin screens to show, and reads it again after a licence change.
+- `edition` is `Community` unless a plugin with an `edition` has at least one feature enabled. A plugin
+  with no enabled features (for example, no licence) leaves IVMS looking exactly like the Community edition.
+
+## Lifespan
+
+A plugin's `lifespan(app)` is entered after the core resources (`app.state.pool`, the MediaMTX client)
+are open and exited before they close. Plugins are entered in load order and exited in reverse.
+
+## API plugins may use
+
+`ivms.plugins` is the stable contract (`PLUGIN_API_VERSION` goes up when it breaks). Plugins may also
+import `ivms.core.db.Conn`, `ivms.core.deps.require` / `CurrentUserId`, `ivms.core.errors` and
+`ivms.core.schemas`. Everything else is internal and can change in any release.
+
+## Packaging
+
+PyInstaller does not bundle entry point metadata by default. A desktop build that includes a plugin
+must add `copy_metadata("<plugin distribution name>")` to its spec's `datas`, or the plugin is not found.

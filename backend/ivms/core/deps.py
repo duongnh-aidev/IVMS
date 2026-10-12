@@ -1,9 +1,11 @@
 """Shared FastAPI dependencies."""
 
+from collections.abc import Iterable
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, Request
+from fastapi.routing import RouteContext
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ivms.core.errors import Unauthorized
@@ -39,11 +41,21 @@ def require(permission: str):
 
     Requires a valid access token. The permission itself is not checked yet (roles come with the
     users feature); routes declare it now so turning that on is a change to this function only.
+    The key is validated by `check_permissions` when the app starts, because plugins add their own keys.
     """
-    if permission not in PERMISSIONS:
-        raise ValueError(f"Unknown permission: {permission}")
 
     async def _check(_: CurrentUserId) -> None:
         return None
 
+    _check.permission = permission
     return Depends(_check)
+
+
+def check_permissions(routes: Iterable[RouteContext], known: Iterable[str]) -> None:
+    """Raises ValueError if a route declares a permission key that is not in `known`."""
+    known = set(known)
+    for route in routes:
+        for dep in getattr(route, "dependencies", None) or ():
+            permission = getattr(dep.dependency, "permission", None)
+            if permission is not None and permission not in known:
+                raise ValueError(f"Unknown permission {permission!r} on {route.path}")

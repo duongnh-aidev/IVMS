@@ -73,6 +73,7 @@ Rules:
    model.** Example: `devices.controller` depends on a `StreamRelay` protocol that
    `streams.mediamtx` implements, so devices can be unit-tested with a fake.
 3. A feature is mounted in `app.py` with one line. Deleting a feature folder plus that line removes it.
+   Separately installed plugins add routes after the core ones and can never replace them ([plugins.md](plugins.md)).
 4. Tests mirror the layout: `tests/unit/features/<feature>/`, `tests/integration/features/<feature>/`.
 
 ## 3. API conventions
@@ -256,7 +257,7 @@ filtered by the user's notification preferences and device scopes.
 | Method | Path | Perm | Purpose |
 | ------ | ---- | ---- | ------- |
 | GET | `/system/health` | public | `{ status, database, redis, mediamtx }` (used by Docker / load balancer). |
-| GET | `/system/info` | — | `{ version, edition, licence: { validUntil, channels }, latestVersion }` |
+| GET | `/system/info` | public | `{ version, edition, features }`: edition and plugin features enabled right now ([plugins.md](plugins.md)). Later also `latestVersion`. |
 | GET | `/me/preferences` | — | Language, start screen, time format, stream quality, notification toggles. |
 | PATCH | `/me/preferences` | — | Partial update. |
 
